@@ -8,6 +8,8 @@ optimizer = true
 via_ir = false
 optimizer-runs = 20_000
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+fs_permissions = [{ access = "read", path = "./"}]
 
 [etherscan]
 #base_chain = { key="${ETHERSCAN_API_KEY}", chain=8453, url = "https://api.basescan.org/api" }
+
