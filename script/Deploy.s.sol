@@ -10,7 +10,7 @@ import "../src/CreatorTokenFactory.sol";
 import "../src/PaymentCollector.sol";
 import "../src/TWAP.sol";
 import "../src/XPRedeem.sol";
-
+import "../src/SmartRouter.sol";
 
 contract DeployAltt is Script {
     function run() external {
@@ -35,6 +35,14 @@ contract DeployAltt is Script {
         PaymentCollector collector = new PaymentCollector(adminGnosis, address(altt), address(registry));
         XPRedeem xpRedeem = new XPRedeem(address(altt), xpSigner);
 
+
+        address[] memory tokens = new address[](5);
+        tokens[0] = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+        tokens[1] = 0x4200000000000000000000000000000000000006;
+        tokens[2] = 0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452;
+        tokens[3] = 0x0555E30da8f98308EdB960aa94C0Db47230d2B9c;
+        tokens[4] = 0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb;
+        SmartRouter router = new SmartRouter(0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a, tokens);
         // hand over ownerships
         //altt.transferOwnership(adminGnosis);
         require(altt.owner() == adminGnosis);
@@ -62,6 +70,7 @@ contract DeployAltt is Script {
         console.log("Notifier: %s", address(notifier));
         console.log("PaymentCollector: %s", address(collector));
         console.log("TWAP: %s", address(twap));
+        console.log("SmartRouter: %s", address(router));
     }
 }
 
