@@ -14,14 +14,6 @@ interface IWETH {
 contract TradeManager is Ownable {
     using SafeERC20 for IERC20;
 
-    struct Position {
-        uint256 id;
-        uint256 timestamp;
-        bytes path;
-        uint256 amount;
-        address owner;
-    }
-
     struct CreatePositionParams {
         bytes path;
         uint256 amount;
@@ -35,8 +27,8 @@ contract TradeManager is Ownable {
     IWETH public immutable weth;
     address public team;
     uint256 public minBuy;
+    mapping (uint8 => uint256) fees;
 
-    mapping (address => Position) positions;
     bool lockSwap;
 
     constructor(
@@ -49,6 +41,13 @@ contract TradeManager is Ownable {
         weth = IWETH(_weth);
         minBuy = 0.1 ether;
         team = _team;
+        fees[0] = 100; // 1% base fee
+        fees[1] = 20;
+        fees[2] = 80;
+        fees[3] = 10;
+        fees[4] = 6;
+        fees[5] = 3;
+        fees[6] = 1;
     }
 
     function createPosition(
@@ -91,17 +90,17 @@ contract TradeManager is Ownable {
         address[] calldata refs
     ) internal returns (uint256) {
         require(refs.length <= 4);
-        uint256 baseFee = amount / 100;
-        uint256 trenchOwnerFee = baseFee * 20 / 100;
-        uint256 teamFee = baseFee * 80 / 100;
+        uint256 baseFee = amount / fees[0]; // fees[0] is 100 by default
+        uint256 trenchOwnerFee = baseFee * fees[1] / 100;
+        uint256 teamFee = baseFee * fees[2] / 100;
         uint256[] memory refFees = new uint256[](4);
 
         if (refs.length > 0) {
-            uint256[4] memory percentages = [uint256(10), uint256(6), uint256(3), uint256(1)];
+            uint256[4] memory percentages = [fees[3], fees[4], fees[5], fees[6]];
             for (uint256 i = 0; i < refs.length; i++) {
-                if(refs[i] == address(0)) continue;
+                if(refs[i] == address(0) || percentages[i] == 0) continue;
                 refFees[i] = baseFee * percentages[i] / 100;
-                console.log("sent %d to %s", refFees[i], refs[i]);
+                if (refFees[i] == 0) continue;
                 IERC20(address(weth)).safeTransfer(refs[i], refFees[i]);
                 teamFee -= refFees[i];
             }
@@ -119,5 +118,25 @@ contract TradeManager is Ownable {
     function setMinBuy(uint256 _buy) public onlyOwner {
         require(_buy > 0 && _buy < 1 ether, "RANGE");
         minBuy = _buy;
+    }
+
+    function setFees(
+        uint256 base,
+        uint256 trenchOwner,
+        uint256 team,
+        uint256 ref1,
+        uint256 ref2,
+        uint256 ref3,
+        uint256 ref4
+    ) external onlyOwner {
+        require(base >= 50, "max 2% total fee"); // 2% = 1/50 minimum
+        require(trenchOwner + team + ref1 + ref2 + ref3 + ref4 <= 100, "invalid fee");
+        fees[0] = base;
+        fees[1] = trenchOwner;
+        fees[2] = team;
+        fees[3] = ref1;
+        fees[4] = ref2;
+        fees[5] = ref3;
+        fees[6] = ref4;
     }
 }
