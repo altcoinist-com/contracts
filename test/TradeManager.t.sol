@@ -324,4 +324,73 @@ contract TradeManagerTest is Test {
         assertApproxEqAbs(state.ref3After - state.ref3Before, amount * 3 / 10000, 10, "ref3");
         assertApproxEqAbs(state.ref4After - state.ref4Before, amount * 1 / 10000, 10, "ref4");
     }
+
+    function createPosition(uint256 amount) internal returns (uint256) {
+        SmartRouter.TradePath memory path = router.exactInputPath(WETH, ALTT, amount);
+        address trenchOwner = makeAddr("trenchOwner");
+        address[] memory refs = new address[](1);
+        refs[0] = makeAddr("ref1");
+        TradeManager.CreatePositionParams memory params = TradeManager.CreatePositionParams({
+                path: path.path,
+                amount: amount,
+                quote: path.expectedAmount,
+                slippage: 9000,
+                trenchOwner: trenchOwner,
+                refs: refs
+        });
+
+        address alice = makeAddr("alice");
+        vm.deal(alice, amount * 2);
+        vm.startPrank(alice);
+        uint256 ret = manager.createPosition{value: amount}(params);
+        vm.stopPrank();
+        return ret;
+    }
+
+    function testFuzz_closePositionLevel1Ref(uint256 amountIn) public {
+        amountIn = bound(amountIn, 1 ether, 10 ether);
+        uint256 amountOut = createPosition(amountIn);
+        address trenchOwner = makeAddr("trenchOwner");
+        address[] memory refs = new address[](1);
+        refs[0] = makeAddr("ref1");
+        SmartRouter.TradePath memory path = router.exactInputPath(ALTT, WETH, amountOut);
+        TradeManager.CreatePositionParams memory params = TradeManager.CreatePositionParams({
+                path: path.path,
+                amount: amountOut,
+                quote: path.expectedAmount,
+                slippage: 10000,
+                trenchOwner: trenchOwner,
+                refs: refs
+        });
+        vm.startPrank(makeAddr("alice"));
+        console.log("%s", IERC20(ALTT).balanceOf(makeAddr("alice")));
+        IERC20(ALTT).approve(address(manager), amountOut);
+        manager.closePosition(params);
+        vm.stopPrank();
+    }
+
+    function testFuzz_closePositionExactAmount(uint256 amountIn) public {
+        amountIn = bound(amountIn, 1 ether, 10 ether);
+        uint256 amountOut = createPosition(amountIn);
+        address trenchOwner = makeAddr("trenchOwner");
+        address[] memory refs = new address[](1);
+        refs[0] = makeAddr("ref1");
+        SmartRouter.TradePath memory path = router.exactInputPath(ALTT, WETH, amountOut + 1);
+        TradeManager.CreatePositionParams memory params = TradeManager.CreatePositionParams({
+                path: path.path,
+                amount: amountOut + 1,
+                quote: path.expectedAmount,
+                slippage: 10000,
+                trenchOwner: trenchOwner,
+                refs: refs
+        });
+        vm.startPrank(makeAddr("alice"));
+        IERC20(ALTT).approve(address(manager), amountOut+1);
+        vm.expectRevert();
+        manager.closePosition(params);
+        vm.stopPrank();
+    }
+
+
+
  }
