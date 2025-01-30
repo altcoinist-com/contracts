@@ -139,8 +139,14 @@ contract TradeManager is Ownable {
                 teamFee -= refFees[i];
             }
         }
-        weth.safeTransfer(trenchOwner, trenchOwnerFee);
-        weth.safeTransfer(team, teamFee);
+
+        if (trenchOwner != address(0)) {
+            weth.safeTransfer(trenchOwner, trenchOwnerFee);
+            weth.safeTransfer(team, teamFee);
+        } else {
+            weth.safeTransfer(team, teamFee + trenchOwnerFee);
+        }
+
         return amount - baseFee;
     }
 
