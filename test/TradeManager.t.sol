@@ -53,10 +53,10 @@ contract TradeManagerTest is Test {
         //abi.encodePacked(tokenIn, v3Fees[j], tokens[i], v3Fees[k], tokenOut);
     }
 
-    function testFuzz_createPositionNoRef(uint256 amount) public {
+    function testFuzz_createPositionNoRef(uint256 amount, bool hasTrench) public {
         amount = bound(amount, 1 ether, 10 ether);
         SmartRouter.TradePath memory path = router.exactInputPath(WETH, ALTT, amount);
-        address trenchOwner = makeAddr("trenchOwner");
+        address trenchOwner = hasTrench ? makeAddr("trenchOwner") : address(0);
         address[] memory refs = new address[](0);
         TradeManager.CreatePositionParams memory params = TradeManager.CreatePositionParams({
                 path: path.path,
@@ -93,17 +93,20 @@ contract TradeManagerTest is Test {
         state.teamAfter = IERC20(WETH).balanceOf(team);
         state.trenchOwnerAfter = IERC20(WETH).balanceOf(trenchOwner);
 
+        uint256 trenchOwnerExpected = hasTrench ? (amount*2 / 1000) : 0;
+        uint256 teamExpected = hasTrench ? (amount*8 / 1000) : amount/100;
+
         assertApproxEqRel(state.aliceAfter - state.aliceBefore, path.expectedAmount, 0.05 ether);
-        assertApproxEqRel(state.teamAfter - state.teamBefore, amount * 8 / 1000, 0.05 ether);
-        assertApproxEqRel(state.trenchOwnerAfter - state.trenchOwnerBefore, amount * 2 / 1000, 0.05 ether);
+        assertApproxEqRel(state.teamAfter - state.teamBefore, teamExpected, 0.05 ether);
+        assertApproxEqRel(state.trenchOwnerAfter - state.trenchOwnerBefore, trenchOwnerExpected, 0.05 ether);
 
     }
 
 
-    function testFuzz_createPositionLevel1Ref(uint256 amount) public {
+    function testFuzz_createPositionLevel1Ref(uint256 amount, bool hasTrench) public {
         amount = bound(amount, 1 ether, 10 ether);
         SmartRouter.TradePath memory path = router.exactInputPath(WETH, ALTT, amount);
-        address trenchOwner = makeAddr("trenchOwner");
+        address trenchOwner = hasTrench ? makeAddr("trenchOwner") : address(0);
         address[] memory refs = new address[](1);
         refs[0] = makeAddr("ref1");
         TradeManager.CreatePositionParams memory params = TradeManager.CreatePositionParams({
@@ -144,17 +147,19 @@ contract TradeManagerTest is Test {
         state.teamAfter = IERC20(WETH).balanceOf(team);
         state.trenchOwnerAfter = IERC20(WETH).balanceOf(trenchOwner);
 
+        uint256 trenchOwnerExpected = hasTrench ? (amount*2 / 1000) : 0;
+        uint256 teamExpected = hasTrench ? (amount*7 / 1000) : amount*9/1000;
 
         assertApproxEqRel(state.aliceAfter - state.aliceBefore, path.expectedAmount, 0.01 ether, "alice");
-        assertApproxEqRel(state.teamAfter - state.teamBefore, amount * 7 / 1000, 0.05 ether, "team");
-        assertApproxEqRel(state.trenchOwnerAfter - state.trenchOwnerBefore, amount * 2 / 1000, 0.05 ether, "ref1");
+        assertApproxEqRel(state.teamAfter - state.teamBefore, teamExpected, 0.05 ether, "team");
+        assertApproxEqRel(state.trenchOwnerAfter - state.trenchOwnerBefore, trenchOwnerExpected, 0.05 ether, "ref1");
 
     }
 
-    function testFuzz_createPositionLevel2Ref(uint256 amount) public {
+    function testFuzz_createPositionLevel2Ref(uint256 amount, bool hasTrench) public {
         amount = bound(amount, 1 ether, 10 ether);
         SmartRouter.TradePath memory path = router.exactInputPath(WETH, ALTT, amount);
-        address trenchOwner = makeAddr("trenchOwner");
+        address trenchOwner = hasTrench ? makeAddr("trenchOwner") : address(0);
         address[] memory refs = new address[](2);
         refs[0] = makeAddr("ref1");
         refs[1] = makeAddr("ref2");
@@ -199,17 +204,20 @@ contract TradeManagerTest is Test {
         state.ref1After = IERC20(WETH).balanceOf(makeAddr("ref1"));
         state.ref2After = IERC20(WETH).balanceOf(makeAddr("ref2"));
 
+        uint256 trenchOwnerExpected = hasTrench ? (amount*2 / 1000) : 0;
+        uint256 teamExpected = hasTrench ? (amount*64 / 10000) : amount*84/10000;
+
         assertApproxEqRel(state.aliceAfter - state.aliceBefore, path.expectedAmount, 0.01 ether, "alice");
-        assertApproxEqAbs(state.teamAfter - state.teamBefore, amount * 64 / 10000, 0.05 ether, "team");
-        assertApproxEqAbs(state.trenchOwnerAfter - state.trenchOwnerBefore, amount * 2 / 1000, 0.01 ether, "trench");
+        assertApproxEqAbs(state.teamAfter - state.teamBefore, teamExpected, 0.05 ether, "team");
+        assertApproxEqAbs(state.trenchOwnerAfter - state.trenchOwnerBefore, trenchOwnerExpected, 0.01 ether, "trench");
         assertApproxEqAbs(state.ref1After - state.ref1Before, amount * 1 / 1000, 0.01 ether, "ref1");
         assertApproxEqAbs(state.ref2After - state.ref2Before, amount * 6 / 10000, 0.01 ether, "ref2");
     }
 
-    function testFuzz_createPositionLevel3Ref(uint256 amount) public {
+    function testFuzz_createPositionLevel3Ref(uint256 amount, bool hasTrench) public {
         amount = bound(amount, 1 ether, 10 ether);
         SmartRouter.TradePath memory path = router.exactInputPath(WETH, ALTT, amount);
-        address trenchOwner = makeAddr("trenchOwner");
+        address trenchOwner = hasTrench ? makeAddr("trenchOwner") : address(0);
         address[] memory refs = new address[](3);
         refs[0] = makeAddr("ref1");
         refs[1] = makeAddr("ref2");
@@ -256,18 +264,21 @@ contract TradeManagerTest is Test {
         state.ref2After = IERC20(WETH).balanceOf(makeAddr("ref2"));
         state.ref3After = IERC20(WETH).balanceOf(makeAddr("ref3"));
 
+        uint256 trenchOwnerExpected = hasTrench ? (amount*2 / 1000) : 0;
+        uint256 teamExpected = hasTrench ? (amount*61 / 10000) : amount*81/10000;
+
         assertApproxEqRel(state.aliceAfter - state.aliceBefore, path.expectedAmount, 0.01 ether, "alice");
-        assertApproxEqAbs(state.teamAfter - state.teamBefore, amount * 61 / 10000, 0.05 ether, "team");
-        assertApproxEqAbs(state.trenchOwnerAfter - state.trenchOwnerBefore, amount * 2 / 1000, 0.01 ether, "trench");
+        assertApproxEqAbs(state.teamAfter - state.teamBefore, teamExpected, 0.05 ether, "team");
+        assertApproxEqAbs(state.trenchOwnerAfter - state.trenchOwnerBefore, trenchOwnerExpected, 0.01 ether, "trench");
         assertApproxEqAbs(state.ref1After - state.ref1Before, amount * 1 / 1000, 0.01 ether, "ref1");
         assertApproxEqAbs(state.ref2After - state.ref2Before, amount * 6 / 10000, 0.01 ether, "ref2");
         assertApproxEqAbs(state.ref3After - state.ref3Before, amount * 3 / 10000, 0.01 ether, "ref3");
     }
 
-    function testFuzz_createPositionLevel4Ref(uint256 amount) public {
+    function testFuzz_createPositionLevel4Ref(uint256 amount, bool hasTrench) public {
         amount = bound(amount, 1 ether, 10 ether);
         SmartRouter.TradePath memory path = router.exactInputPath(WETH, ALTT, amount);
-        address trenchOwner = makeAddr("trenchOwner");
+        address trenchOwner = hasTrench ? makeAddr("trenchOwner") : address(0);
         address[] memory refs = new address[](4);
         refs[0] = makeAddr("ref1");
         refs[1] = makeAddr("ref2");
@@ -316,9 +327,12 @@ contract TradeManagerTest is Test {
         state.ref3After = IERC20(WETH).balanceOf(makeAddr("ref3"));
         state.ref4After = IERC20(WETH).balanceOf(makeAddr("ref4"));
 
+        uint256 trenchOwnerExpected = hasTrench ? (amount*2 / 1000) : 0;
+        uint256 teamExpected = hasTrench ? (amount*60 / 10000) : amount*80/10000;
+
         assertApproxEqRel(state.aliceAfter - state.aliceBefore, path.expectedAmount, 0.01 ether, "alice");
-        assertApproxEqAbs(state.teamAfter - state.teamBefore, amount * 60 / 10000, 10, "team");
-        assertApproxEqAbs(state.trenchOwnerAfter - state.trenchOwnerBefore, amount * 2 / 1000, 10, "trench");
+        assertApproxEqAbs(state.teamAfter - state.teamBefore, teamExpected, 10, "team");
+        assertApproxEqAbs(state.trenchOwnerAfter - state.trenchOwnerBefore, trenchOwnerExpected, 10, "trench");
         assertApproxEqAbs(state.ref1After - state.ref1Before, amount * 1 / 1000, 10, "ref1");
         assertApproxEqAbs(state.ref2After - state.ref2Before, amount * 6 / 10000, 10, "ref2");
         assertApproxEqAbs(state.ref3After - state.ref3Before, amount * 3 / 10000, 10, "ref3");
@@ -390,7 +404,6 @@ contract TradeManagerTest is Test {
         manager.closePosition(params);
         vm.stopPrank();
     }
-
 
 
  }
