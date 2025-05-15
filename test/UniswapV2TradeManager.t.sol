@@ -1,6 +1,6 @@
 import {Test, console} from "forge-std/Test.sol";
 import "forge-std/console.sol";
-import { UniswapV2TradeManager } from "../src/SmartRouterUniV2.sol";
+import { UniswapV2TradeManager } from "../src/UniswapV2TradeManager.sol";
 
 contract SmartRouterUniV2 is Test {
     address public constant ROUTER = 0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24;
