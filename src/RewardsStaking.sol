@@ -1,144 +1,150 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract RewardsStaking is ERC4626, ReentrancyGuard {
+contract RewardsStaking is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     enum LockType { LIQUID, LOCK_1M, LOCK_3M, LOCK_6M, LOCK_12M }
 
-    struct Position {
+    struct StakingPosition {
         uint256 amount;
         uint256 startTime;
         uint256 unlockTime;
+        uint256 cooldownStart;
         LockType lockType;
     }
 
-    IERC20 public immutable rewardALTT;
-    IERC20 public immutable rewardATA;
+    struct Emission {
+        address token;
+        uint256 amount;
+        uint256 startDay;
+    }
 
+    IERC20 public immutable stakingToken;
+    address[] public rewardTokens;
+
+    uint256 constant DECIMALS = 1e18;
     uint256 constant DECAY_DAYS = 90;
-    uint256 public constant COOLDOWN = 7 days;
+    uint256 constant COOLDOWN = 7 days;
 
-    mapping(address => Position[]) public userPositions;
-    mapping(uint256 => uint256) public alttEmissionsByDay;
-    mapping(uint256 => uint256) public ataEmissionsByDay;
+    mapping(address => StakingPosition[]) public userPositions;
     mapping(address => uint256) public lastClaimedDay;
-    mapping(address => uint256) public pendingALTT;
-    mapping(address => uint256) public pendingATA;
+    mapping(address => mapping(uint256 => uint256)) public userWeightPerDay;
+    mapping(uint256 => uint256) public totalWeightPerDay;
+    mapping(address => mapping(address => uint256)) public pendingRewards;
+    Emission[] public emissions;
 
-    uint256 public deploymentDay;
-
+    event Staked(address indexed user, uint256 amount, LockType lockType);
+    event UnstakeRequested(address indexed user, uint256 index);
+    event Withdrawn(address indexed user, uint256 amount);
+    event Claimed(address indexed user, address rewardToken, uint256 amount);
     event TopUp(address indexed token, uint256 amount);
-    event Claimed(address indexed user, uint256 altt, uint256 ata);
 
-    constructor(
-        IERC20 _stakingToken,
-        IERC20 _rewardALTT,
-        IERC20 _rewardATA
-    ) ERC20("Staked ALTT", "stALTT") ERC4626(_stakingToken) {
-        rewardALTT = _rewardALTT;
-        rewardATA = _rewardATA;
-        deploymentDay = block.timestamp / 1 days;
+    constructor(IERC20 _stakingToken, address[] memory _rewardTokens)  {
+        stakingToken = _stakingToken;
+        rewardTokens = _rewardTokens;
     }
 
-    function deposit(uint256 assets, address receiver, LockType lockType) external nonReentrant returns (uint256 shares) {
-        require(assets > 0, "Zero amount");
+    function stake(uint256 amount, LockType lockType) external nonReentrant {
+        require(amount > 0, "zero amount");
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        uint256 lockPeriod = getLockPeriod(lockType);
-        uint256 unlock = block.timestamp + lockPeriod;
+        uint256 duration = getLockDuration(lockType);
+        uint256 unlockTime = block.timestamp + duration;
 
-        Position memory p = Position({
-            amount: assets,
+        userPositions[msg.sender].push(StakingPosition({
+            amount: amount,
             startTime: block.timestamp,
-            unlockTime: unlock,
+            unlockTime: unlockTime,
+            cooldownStart: 0,
             lockType: lockType
-        });
+        }));
 
-        userPositions[receiver].push(p);
+        uint256 day = block.timestamp / 1 days;
+        uint256 weight = (amount * getLockMultiplier(lockType)) / DECIMALS;
+        userWeightPerDay[msg.sender][day] += weight;
+        totalWeightPerDay[day] += weight;
 
-        shares = previewDeposit(assets);
-        _mint(receiver, shares);
-        asset().safeTransferFrom(msg.sender, address(this), assets);
+        emit Staked(msg.sender, amount, lockType);
     }
 
-    function withdraw(uint256 posIndex) external nonReentrant {
-        Position memory p = userPositions[msg.sender][posIndex];
-        require(p.amount > 0, "Invalid position");
-        require(block.timestamp >= p.unlockTime, "Still locked");
-
-        uint256 shares = previewWithdraw(p.amount);
-        _burn(msg.sender, shares);
-        asset().safeTransfer(msg.sender, p.amount);
-
-        // Remove position
-        Position[] storage positions = userPositions[msg.sender];
-        positions[posIndex] = positions[positions.length - 1];
-        positions.pop();
+    function requestUnstake(uint256 index) external {
+        StakingPosition storage pos = userPositions[msg.sender][index];
+        require(pos.amount > 0, "invalid position");
+        if (pos.lockType == LockType.LIQUID) {
+            pos.cooldownStart = block.timestamp;
+        }
+        emit UnstakeRequested(msg.sender, index);
     }
 
-    function topUp(IERC20 rewardToken, uint256 amount) external nonReentrant {
-        require(rewardToken == rewardALTT || rewardToken == rewardATA, "Invalid token");
-        rewardToken.safeTransferFrom(msg.sender, address(this), amount);
+    function withdraw(uint256 index) external nonReentrant {
+        StakingPosition storage pos = userPositions[msg.sender][index];
+        require(pos.amount > 0, "invalid position");
 
-        uint256 currentDay = block.timestamp / 1 days - deploymentDay;
-        uint256 remaining = amount;
-
-        for (uint256 i = 0; i < DECAY_DAYS; i++) {
-            uint256 day = currentDay + i;
-            uint256 daily = remaining / (DECAY_DAYS - i);
-            remaining -= daily;
-            if (rewardToken == rewardALTT) alttEmissionsByDay[day] += daily;
-            else ataEmissionsByDay[day] += daily;
+        if (pos.lockType == LockType.LIQUID) {
+            require(pos.cooldownStart > 0 && block.timestamp >= pos.cooldownStart + COOLDOWN, "cooldown");
+        } else {
+            require(block.timestamp >= pos.unlockTime, "locked");
         }
 
-        emit TopUp(address(rewardToken), amount);
+        uint256 amount = pos.amount;
+        pos.amount = 0;
+        stakingToken.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
     }
 
     function claim() external nonReentrant {
-        uint256 today = block.timestamp / 1 days - deploymentDay;
-        uint256 last = lastClaimedDay[msg.sender];
-        lastClaimedDay[msg.sender] = today;
+        uint256 currentDay = block.timestamp / 1 days;
+        uint256 fromDay = lastClaimedDay[msg.sender];
+        lastClaimedDay[msg.sender] = currentDay;
 
-        uint256 userWeight;
-        for (uint256 i = 0; i < userPositions[msg.sender].length; i++) {
-            Position memory p = userPositions[msg.sender][i];
-            if (p.startTime + getLockPeriod(p.lockType) < block.timestamp) continue;
-            userWeight += getWeight(p.lockType) * p.amount;
+        for (uint256 day = fromDay; day < currentDay; day++) {
+            uint256 userWeight = userWeightPerDay[msg.sender][day];
+            uint256 totalWeight = totalWeightPerDay[day];
+            if (totalWeight == 0 || userWeight == 0) continue;
+
+            for (uint256 i = 0; i < emissions.length; i++) {
+                Emission memory e = emissions[i];
+                if (day < e.startDay || day >= e.startDay + DECAY_DAYS) continue;
+                uint256 emissionAmount = computeRecursiveEmission(e.amount, day - e.startDay);
+                uint256 userShare = (emissionAmount * userWeight) / totalWeight;
+                pendingRewards[msg.sender][e.token] += userShare;
+            }
         }
 
-        uint256 totalShares = totalSupply();
-        require(totalShares > 0, "No active staking");
-
-        for (uint256 d = last; d < today; d++) {
-            uint256 dayAltt = alttEmissionsByDay[d];
-            uint256 dayAta = ataEmissionsByDay[d];
-
-            pendingALTT[msg.sender] += (dayAltt * userWeight) / totalShares;
-            pendingATA[msg.sender] += (dayAta * userWeight) / totalShares;
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            address token = rewardTokens[i];
+            uint256 amount = pendingRewards[msg.sender][token];
+            if (amount > 0) {
+                pendingRewards[msg.sender][token] = 0;
+                IERC20(token).safeTransfer(msg.sender, amount);
+                emit Claimed(msg.sender, token, amount);
+            }
         }
-
-        uint256 toSendALTT = pendingALTT[msg.sender];
-        uint256 toSendATA = pendingATA[msg.sender];
-
-        if (toSendALTT > 0) {
-            pendingALTT[msg.sender] = 0;
-            rewardALTT.safeTransfer(msg.sender, toSendALTT);
-        }
-
-        if (toSendATA > 0) {
-            pendingATA[msg.sender] = 0;
-            rewardATA.safeTransfer(msg.sender, toSendATA);
-        }
-
-        emit Claimed(msg.sender, toSendALTT, toSendATA);
     }
 
-    function getLockPeriod(LockType lt) internal pure returns (uint256) {
+    function topUp(address rewardToken, uint256 amount) external {
+        require(amount > 0, "zero");
+        IERC20(rewardToken).safeTransferFrom(msg.sender, address(this), amount);
+        emissions.push(Emission({ token: rewardToken, amount: amount, startDay: block.timestamp / 1 days }));
+        emit TopUp(rewardToken, amount);
+    }
+
+    function computeRecursiveEmission(uint256 total, uint256 dayIndex) public pure returns (uint256) {
+        uint256 remaining = total;
+        uint256 emitted;
+        for (uint256 i = 0; i <= dayIndex; i++) {
+            uint256 today = remaining / DECAY_DAYS;
+            emitted = today;
+            remaining -= today;
+        }
+        return emitted;
+    }
+
+    function getLockDuration(LockType lt) public pure returns (uint256) {
         if (lt == LockType.LIQUID) return 0;
         if (lt == LockType.LOCK_1M) return 30 days;
         if (lt == LockType.LOCK_3M) return 90 days;
@@ -147,12 +153,12 @@ contract RewardsStaking is ERC4626, ReentrancyGuard {
         revert("Invalid lock type");
     }
 
-    function getWeight(LockType lt) internal pure returns (uint256) {
-        if (lt == LockType.LIQUID) return 50;
-        if (lt == LockType.LOCK_1M) return 55;
-        if (lt == LockType.LOCK_3M) return 62;
-        if (lt == LockType.LOCK_6M) return 75;
-        if (lt == LockType.LOCK_12M) return 100;
-        return 0;
+    function getLockMultiplier(LockType lt) public pure returns (uint256) {
+        if (lt == LockType.LIQUID) return 0.5e18;
+        if (lt == LockType.LOCK_1M) return 0.55e18;
+        if (lt == LockType.LOCK_3M) return 0.625e18;
+        if (lt == LockType.LOCK_6M) return 0.75e18;
+        if (lt == LockType.LOCK_12M) return 1e18;
+        revert("Invalid lock type");
     }
 }
