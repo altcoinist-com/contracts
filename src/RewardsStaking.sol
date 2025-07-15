@@ -58,7 +58,6 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
     error InvalidLockType();
     error InvalidRewardToken();
     error AlreadyAddedRewardToken();
-    error CooldownNotInitiated();
     error CooldownNotFinished();
     error PositionLocked();
     error PositionNotExists();
@@ -135,7 +134,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
 
         uint256 weight = (amount * getLockMultiplier(lockType)) / WEIGHT_SCALE;
         
-        _updateWeightsForPeriod(msg.sender, startDay, unlockTime, weight, true);
+        _updateWeightsForPeriod(msg.sender, startDay, unlockTime, weight);
         
         totalStaked += amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
@@ -143,44 +142,39 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         emit Staked(msg.sender, amount, lockType, positionIndex);
     }
 
-    function initiateCooldown(uint256 index) external nonReentrant {
-        StakingPosition[] storage positions = userPositions[msg.sender];
-        if (index >= positions.length) revert InvalidIndex();
-        
-        StakingPosition storage pos = positions[index];
-        if (!pos.exists) revert PositionNotExists();
-        if (pos.lockType != LockType.LIQUID) revert InvalidLockType();
-        if (pos.cooldownStart != 0) revert(); // Cooldown уже инициирован
-        
-        pos.cooldownStart = block.timestamp;
-        emit CooldownInitiated(msg.sender, index);
-    }
-
     function withdraw(uint256 index) external nonReentrant {
         StakingPosition[] storage positions = userPositions[msg.sender];
         if (index >= positions.length) revert InvalidIndex();
 
-        StakingPosition memory pos = positions[index];
+        StakingPosition storage pos = positions[index];
         if (!pos.exists) revert PositionNotExists();
         
         if (pos.lockType == LockType.LIQUID) {
-            if (pos.cooldownStart == 0) revert CooldownNotInitiated();
-            if (block.timestamp < pos.cooldownStart + COOLDOWN) revert CooldownNotFinished();
+            if (pos.cooldownStart == 0) {
+                pos.cooldownStart = block.timestamp;
+                emit CooldownInitiated(msg.sender, index);
+                return;
+            } else if (block.timestamp < pos.cooldownStart + COOLDOWN) {
+                // Cooldown is not finished yet
+                revert CooldownNotFinished();
+            }
+            // Cooldown is finished -> continue withdraw
         } else {
+            // For locked positions, check unlock time
             if (block.timestamp < pos.unlockTime) revert PositionLocked();
         }
 
         uint256 amount = pos.amount;
         if (amount == 0) revert InvalidAmount();
 
-        // mark position as non existing
-        positions[index].exists = false;
-        positions[index].amount = 0;
+        // Mark position as non-existent
+        pos.exists = false;
+        pos.amount = 0;
 
-        // update weights - remove weight from current day to end of lock
+        // Update weights - remove weight from current day to end of lock period
         uint256 currentDay = block.timestamp / 1 days;
         uint256 weight = (amount * getLockMultiplier(pos.lockType)) / WEIGHT_SCALE;
-        _updateWeightsForPeriod(msg.sender, currentDay, pos.unlockTime, weight, false);
+        _updateWeightsForPeriod(msg.sender, currentDay, pos.unlockTime, 0 - weight);
 
         totalStaked -= amount;
         stakingToken.safeTransfer(msg.sender, amount);
@@ -206,6 +200,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
             address rewardToken = rewardTokens[r];
             uint256 totalReward = 0;
 
+            // Count rewards for each day from the last claim to the current day (not including the current day)
             for (uint256 d = lastClaimed; d < currentDay; d++) {
                 uint256 totalWeight = totalWeightPerDay[d];
                 if (totalWeight == 0) continue;
@@ -239,6 +234,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         uint256[] memory emissions = new uint256[](DECAY_DAYS);
         uint256 totalWeight = 0;
 
+        // Calculate weights for each day with exponential decay
         emissions[0] = DECAY_SCALE;
         totalWeight = DECAY_SCALE;
 
@@ -247,7 +243,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
             totalWeight += emissions[i];
         }
 
-        // distribute rewards by days
+        // Distribute rewards over days
         for (uint256 i = 0; i < DECAY_DAYS; i++) {
             uint256 dailyAmount = (amount * emissions[i]) / totalWeight;
             emissionsByToken[rewardToken][currentDay + i] += dailyAmount;
@@ -262,19 +258,13 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         address user,
         uint256 startDay,
         uint256 unlockTime,
-        uint256 weight,
-        bool isAdding
+        uint256 weight
     ) internal {
         uint256 endDay = unlockTime / 1 days;
         
         for (uint256 day = startDay; day <= endDay; day++) {
-            if (isAdding) {
-                userWeightPerDay[user][day] += weight;
-                totalWeightPerDay[day] += weight;
-            } else {
-                userWeightPerDay[user][day] -= weight;
-                totalWeightPerDay[day] -= weight;
-            }
+            userWeightPerDay[user][day] += weight;
+            totalWeightPerDay[day] += weight;
         }
     }
 
@@ -369,7 +359,9 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         if (!pos.exists) return false;
         
         if (pos.lockType == LockType.LIQUID) {
-            return pos.cooldownStart > 0 && block.timestamp >= pos.cooldownStart + COOLDOWN;
+            // For LIQUID positions: can call withdraw if cooldown is not initiated
+            // or if cooldown is finished
+            return pos.cooldownStart == 0 || block.timestamp >= pos.cooldownStart + COOLDOWN;
         } else {
             return block.timestamp >= pos.unlockTime;
         }
@@ -382,14 +374,12 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         StakingPosition memory pos = positions[index];
         if (!pos.exists) return 0;
         
-        uint256 unlockTime;
         if (pos.lockType == LockType.LIQUID) {
-            if (pos.cooldownStart == 0) return type(uint256).max;
-            unlockTime = pos.cooldownStart + COOLDOWN;
+            if (pos.cooldownStart == 0) return 0; // Can initiate cooldown
+            uint256 unlockTime = pos.cooldownStart + COOLDOWN;
+            return unlockTime > block.timestamp ? unlockTime - block.timestamp : 0;
         } else {
-            unlockTime = pos.unlockTime;
+            return pos.unlockTime > block.timestamp ? pos.unlockTime - block.timestamp : 0;
         }
-        
-        return unlockTime > block.timestamp ? unlockTime - block.timestamp : 0;
     }
 }
