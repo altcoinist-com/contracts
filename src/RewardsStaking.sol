@@ -14,11 +14,10 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
 
     struct StakingPosition {
         uint96 amount;
-        uint48 startTime;
-        uint48 unlockTime;
-        uint48 cooldownStart;
+        uint16 startDay;
+        uint16 unlockDay;
+        uint16 cooldownStartDay;
         LockType lockType;
-        uint48 startDay;
         bool exists;
     }
 
@@ -118,24 +117,22 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
     function stake(uint256 amount, LockType lockType) external nonReentrant whenNotPaused {
         if (amount == 0) revert InvalidAmount();
 
-        uint256 lockPeriod = getLockDuration(lockType);
-        uint256 unlockTime = block.timestamp + lockPeriod;
-        uint256 startDay = block.timestamp / 1 days;
-        uint256 endDay = unlockTime / 1 days;
+        uint256 currentDay = block.timestamp / 1 days;
+        uint16 startDay = uint16(currentDay);
+        uint16 unlockDay = startDay + getLockDuration(lockType);
 
         uint256 positionIndex = userPositions[msg.sender].length;
         userPositions[msg.sender].push(StakingPosition({
             amount: uint96(amount),
-            startTime: uint48(block.timestamp),
-            unlockTime: uint48(unlockTime),
-            cooldownStart: 0,
+            startDay: startDay,
+            unlockDay: unlockDay,
+            cooldownStartDay: 0,
             lockType: lockType,
-            startDay: uint48(startDay),
             exists: true
         }));
 
         uint256 weight = calculateWeight(amount, lockType);
-        _updateWeightDelta(msg.sender, startDay, endDay, int256(uint256(weight)));
+        _updateWeightDelta(msg.sender, startDay, unlockDay, int256(weight));
 
         totalStaked += amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
@@ -150,32 +147,29 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         StakingPosition storage pos = positions[index];
         if (!pos.exists) revert PositionNotExists();
 
+        uint256 currentDay = block.timestamp / 1 days;
         if (pos.lockType == LockType.LIQUID) {
-            if (pos.cooldownStart == 0) {
-                pos.cooldownStart = uint48(block.timestamp);
+            if (pos.cooldownStartDay == 0) {
+                pos.cooldownStartDay = uint16(currentDay);
                 emit CooldownInitiated(msg.sender, index);
                 return;
-            } else if (block.timestamp < pos.cooldownStart + COOLDOWN) {
-                // Cooldown is not finished yet
+            } else if (block.timestamp < (uint256(pos.cooldownStartDay) * 1 days + COOLDOWN)) {
                 revert CooldownNotFinished();
             }
-            // Cooldown is finished -> continue withdraw
         } else {
-            // For locked positions, check unlock time
-            if (block.timestamp < pos.unlockTime) revert PositionLocked();
+            if (currentDay < pos.unlockDay) revert PositionLocked();
         }
 
         uint256 amount = pos.amount;
         if (amount == 0) revert InvalidAmount();
 
-        uint256 currentDay = block.timestamp / 1 days;
-        uint256 endDay = pos.unlockTime / 1 days;
         uint256 weight = calculateWeight(amount, pos.lockType);
+        _updateWeightDelta(msg.sender, currentDay, pos.unlockDay, -int256(weight));
 
-        _updateWeightDelta(msg.sender, currentDay, endDay, -int256(uint256(weight)));
         totalStaked -= amount;
+        pos.exists = false;
+        pos.amount = 0;
 
-        _removePosition(pos);
         stakingToken.safeTransfer(msg.sender, amount);
 
         emit Withdrawn(msg.sender, amount, index);
@@ -190,35 +184,33 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
 
         lastClaimedDay[msg.sender] = currentDay;
 
-        bool hasRewards = false;
-
-        for (uint256 r = 0; r < rewardTokens.length; ++r) {
+        for (uint256 r = 0; r < rewardTokens.length; ) {
             address rewardToken = rewardTokens[r];
             uint256 totalReward = 0;
             int256 userWeight = 0;
             int256 totalWeight = 0;
 
-            for (uint256 d = lastClaimed; d < currentDay; ++d) {
+            for (uint256 d = lastClaimed; d < currentDay; ) {
                 userWeight += userWeightDelta[msg.sender][d];
-                if (userWeight <= 0) continue;
-
                 totalWeight += totalWeightDelta[d];
-                if (totalWeight <= 0) continue;
-                
-                uint256 emissions = emissionsByToken[rewardToken][d];
-                if (emissions == 0) continue;
+                if (userWeight <= 0 || totalWeight <= 0) {
+                    unchecked { ++d; }
+                    continue;
+                }
 
-                totalReward += (emissions * uint256(userWeight)) / uint256(totalWeight);
+                uint256 emissions = emissionsByToken[rewardToken][d];
+                if (emissions > 0) {
+                    totalReward += (emissions * uint256(userWeight)) / uint256(totalWeight);
+                }
+                unchecked { ++d; }
             }
 
             if (totalReward > 0) {
                 IERC20(rewardToken).safeTransfer(msg.sender, totalReward);
                 emit Claimed(msg.sender, rewardToken, totalReward);
-                hasRewards = true;
             }
+            unchecked { ++r; }
         }
-
-        if (!hasRewards) revert NothingToClaim();
     }
 
     function topUp(address rewardToken, uint256 amount) external nonReentrant whenNotPaused {
@@ -232,14 +224,16 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         emissions[0] = DECAY_SCALE;
         uint256 totalDecayWeight = DECAY_SCALE;
 
-        for (uint256 i = 1; i < DECAY_DAYS; ++i) {
+        for (uint256 i = 1; i < DECAY_DAYS; ) {
             emissions[i] = (emissions[i - 1] * DECAY_BASE) / DECAY_SCALE;
             totalDecayWeight += emissions[i];
+            unchecked { ++i; }
         }
 
-        for (uint256 i = 0; i < DECAY_DAYS; ++i) {
+        for (uint256 i = 0; i < DECAY_DAYS; ) {
             uint256 dailyAmount = (amount * emissions[i]) / totalDecayWeight;
             emissionsByToken[rewardToken][currentDay + i] += dailyAmount;
+            unchecked { ++i; }
         }
 
         emit TopUp(rewardToken, amount);
@@ -256,26 +250,21 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         totalWeightDelta[endDay + 1] -= delta;
     }
 
-    function _removePosition(StakingPosition storage pos) internal {
-        pos.exists = false;
-        pos.amount = 0;
-    }
-
     function getCurrentDay() internal view returns (uint256) {
         uint256 currentTimestamp = block.timestamp / 1 days;
         return currentTimestamp >= deploymentDay ? currentTimestamp - deploymentDay : 0;
     }
 
-    function getLockDuration(LockType lt) internal pure returns (uint256) {
-        if (lt == LockType.LIQUID) return 0;
-        if (lt == LockType.LOCK_1M) return 30 days;
-        if (lt == LockType.LOCK_3M) return 90 days;
-        if (lt == LockType.LOCK_6M) return 180 days;
-        if (lt == LockType.LOCK_12M) return 365 days;
+    function getLockDuration(LockType lt) internal pure returns (uint16) {
+        if (lt == LockType.LIQUID) return type(uint16).max;
+        if (lt == LockType.LOCK_1M) return 30;
+        if (lt == LockType.LOCK_3M) return 90;
+        if (lt == LockType.LOCK_6M) return 180;
+        if (lt == LockType.LOCK_12M) return 365;
         revert InvalidLockType();
     }
 
-    function getLockMultiplier(LockType lt) internal pure returns (uint256) {
+    function getLockMultiplier(LockType lt) internal pure returns (uint16) {
         if (lt == LockType.LIQUID) return 500;
         if (lt == LockType.LOCK_1M) return 550;
         if (lt == LockType.LOCK_3M) return 625;
