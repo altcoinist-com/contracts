@@ -35,8 +35,10 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
 
     mapping(address => StakingPosition[]) public userPositions;
     mapping(address => uint256) public lastClaimedDay;
-    mapping(address => mapping(uint256 => uint256)) public userWeightPerDay;
-    mapping(uint256 => uint256) public totalWeightPerDay;
+
+    // delta-weight model
+    mapping(address => mapping(uint256 => int256)) public userWeightDelta;
+    mapping(uint256 => int256) public totalWeightDelta;
 
     // Emissions and balances per reward token
     mapping(address => mapping(uint256 => uint256)) public emissionsByToken; // rewardToken => day => amount
@@ -119,6 +121,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         uint256 lockPeriod = getLockDuration(lockType);
         uint256 unlockTime = block.timestamp + lockPeriod;
         uint256 startDay = block.timestamp / 1 days;
+        uint256 endDay = unlockTime / 1 days;
 
         uint256 positionIndex = userPositions[msg.sender].length;
         userPositions[msg.sender].push(StakingPosition({
@@ -132,7 +135,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         }));
 
         uint256 weight = calculateWeight(amount, lockType);
-        _updateWeightsForPeriod(msg.sender, startDay, unlockTime, int256(weight));
+        _updateWeightDelta(msg.sender, startDay, endDay, int256(uint256(weight)));
 
         totalStaked += amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
@@ -166,9 +169,10 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         if (amount == 0) revert InvalidAmount();
 
         uint256 currentDay = block.timestamp / 1 days;
+        uint256 endDay = pos.unlockTime / 1 days;
         uint256 weight = calculateWeight(amount, pos.lockType);
 
-        _updateWeightsForPeriod(msg.sender, currentDay, pos.unlockTime, -int256(weight));
+        _updateWeightDelta(msg.sender, currentDay, endDay, -int256(uint256(weight)));
         totalStaked -= amount;
 
         _removePosition(pos);
@@ -176,8 +180,6 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
 
         emit Withdrawn(msg.sender, amount, index);
     }
-
-    // ============ REWARDS FUNCTIONS ============
 
     function claim() external nonReentrant {
         if (rewardTokens.length == 0) revert EmptyRewardTokens();
@@ -193,25 +195,26 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         for (uint256 r = 0; r < rewardTokens.length; ++r) {
             address rewardToken = rewardTokens[r];
             uint256 totalReward = 0;
+            int256 userWeight = 0;
+            int256 totalWeight = 0;
 
-            // Count rewards for each day from the last claim to the current day (not including the current day)
-            for (uint256 d = lastClaimed; d < currentDay; d++) {
-                uint256 totalWeight = totalWeightPerDay[d];
-                if (totalWeight == 0) continue;
+            for (uint256 d = lastClaimed; d < currentDay; ++d) {
+                userWeight += userWeightDelta[msg.sender][d];
+                if (userWeight <= 0) continue;
 
-                uint256 userWeight = userWeightPerDay[msg.sender][d];
-                if (userWeight == 0) continue;
-
+                totalWeight += totalWeightDelta[d];
+                if (totalWeight <= 0) continue;
+                
                 uint256 emissions = emissionsByToken[rewardToken][d];
                 if (emissions == 0) continue;
 
-                totalReward += (emissions * userWeight) / totalWeight;
+                totalReward += (emissions * uint256(userWeight)) / uint256(totalWeight);
             }
 
             if (totalReward > 0) {
-                hasRewards = true;
                 IERC20(rewardToken).safeTransfer(msg.sender, totalReward);
                 emit Claimed(msg.sender, rewardToken, totalReward);
+                hasRewards = true;
             }
         }
 
@@ -227,38 +230,30 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         uint256 currentDay = getCurrentDay();
         uint256[] memory emissions = new uint256[](DECAY_DAYS);
         emissions[0] = DECAY_SCALE;
-        uint256 totalWeight = DECAY_SCALE;
+        uint256 totalDecayWeight = DECAY_SCALE;
 
-        // Calculate weights for each day with exponential decay
-        for (uint256 i = 1; i < DECAY_DAYS; ) {
+        for (uint256 i = 1; i < DECAY_DAYS; ++i) {
             emissions[i] = (emissions[i - 1] * DECAY_BASE) / DECAY_SCALE;
-            totalWeight += emissions[i];
-            unchecked { ++i; }
+            totalDecayWeight += emissions[i];
         }
-        // Distribute rewards over days
+
         for (uint256 i = 0; i < DECAY_DAYS; ++i) {
-            uint256 dailyAmount = (amount * emissions[i]) / totalWeight;
+            uint256 dailyAmount = (amount * emissions[i]) / totalDecayWeight;
             emissionsByToken[rewardToken][currentDay + i] += dailyAmount;
         }
 
         emit TopUp(rewardToken, amount);
     }
 
-    function _updateWeightsForPeriod(address user, uint256 startDay, uint256 unlockTime, int256 weightDelta) internal {
-        uint256 endDay = unlockTime / 1 days;
-        for (uint256 day = startDay; day <= endDay; ++day) {
-            if (weightDelta > 0) {
-                userWeightPerDay[user][day] += uint256(weightDelta);
-                totalWeightPerDay[day] += uint256(weightDelta);
-            } else {
-                userWeightPerDay[user][day] -= uint256(-weightDelta);
-                totalWeightPerDay[day] -= uint256(-weightDelta);
-            }
-        }
-    }
-
     function calculateWeight(uint256 amount, LockType lockType) internal pure returns (uint256) {
         return (amount * getLockMultiplier(lockType)) / WEIGHT_SCALE;
+    }
+
+    function _updateWeightDelta(address user, uint256 startDay, uint256 endDay, int256 delta) internal {
+        userWeightDelta[user][startDay] += delta;
+        userWeightDelta[user][endDay + 1] -= delta;
+        totalWeightDelta[startDay] += delta;
+        totalWeightDelta[endDay + 1] -= delta;
     }
 
     function _removePosition(StakingPosition storage pos) internal {
@@ -296,4 +291,4 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
     fallback() external payable {
         revert("Fallback function not allowed");
     }
-} 
+}
