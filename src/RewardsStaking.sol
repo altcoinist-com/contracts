@@ -118,8 +118,8 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         if (amount == 0) revert InvalidAmount();
 
         uint256 currentDay = block.timestamp / 1 days;
-        uint16 startDay = uint16(currentDay);
-        uint16 unlockDay = startDay + getLockDuration(lockType);
+        uint16 startDay = uint16(currentDay + 1); // activity starts from the next day
+        uint16 unlockDay = uint16(startDay + getLockDuration(lockType));
 
         uint256 positionIndex = userPositions[msg.sender].length;
         userPositions[msg.sender].push(StakingPosition({
@@ -219,7 +219,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
 
         IERC20(rewardToken).safeTransferFrom(msg.sender, address(this), amount);
 
-        uint256 currentDay = getCurrentDay();
+        uint256 currentDay = getCurrentDay(); // emissions start from the current day
         uint256[] memory emissions = new uint256[](DECAY_DAYS);
         emissions[0] = DECAY_SCALE;
         uint256 totalDecayWeight = DECAY_SCALE;
