@@ -30,7 +30,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
     mapping(address => uint8) public rewardTokenIndex; // index of token in rewardTokens array
     mapping(address => bool) public isRewardToken; // is token added as reward token
 
-    uint256 constant COOLDOWN = 7 days;
+    uint256 constant COOLDOWN = 7;
     uint256 public constant DECAY_DAYS = 90;
     uint256 public constant DECAY_BASE = 990; // equivalent to 0.99 with scale 1000
     uint256 public constant DECAY_SCALE = 1000;
