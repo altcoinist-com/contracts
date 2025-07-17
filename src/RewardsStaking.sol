@@ -270,7 +270,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         userWeightDelta[user][startDaySinceDeployment] += delta;
         totalWeightDelta[startDaySinceDeployment] += delta;
 
-        if (endDaySinceDeployment + 1 < type(uint256).max) {
+        if (endDaySinceDeployment < type(uint256).max) {
             userWeightDelta[user][endDaySinceDeployment + 1] -= delta;
             totalWeightDelta[endDaySinceDeployment + 1] -= delta;
         }
