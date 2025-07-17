@@ -35,6 +35,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
     uint256 public constant DECAY_BASE = 990; // equivalent to 0.99 with scale 1000
     uint256 public constant DECAY_SCALE = 1000;
     uint256 public constant WEIGHT_SCALE = 1000;
+    uint256 public constant MIN_STAKING_AMOUNT = 100 * 10 ** 18;
 
     mapping(address => mapping(uint256 => StakingPosition)) public userPositions;
     mapping(address => UserData) public userData;
@@ -120,7 +121,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
     // ============ STAKING FUNCTIONS ============
 
     function stake(uint256 amount, LockType lockType) external nonReentrant whenNotPaused {
-        if (amount == 0) revert InvalidAmount();
+        if (amount < MIN_STAKING_AMOUNT) revert InvalidAmount();
 
         uint256 currentDay = getCurrentDaySinceDeployment();
         uint32 startDay = uint32(currentDay + 1); // staking starts from the next day
