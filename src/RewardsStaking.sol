@@ -50,7 +50,6 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
     uint256 public immutable deploymentDay;
     uint256 public totalStaked;
 
-
     // Events
     event TopUp(address indexed token, uint256 amount);
     event Staked(address indexed user, uint256 amount, LockType lockType, uint256 positionIndex);
