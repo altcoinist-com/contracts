@@ -14,9 +14,10 @@ contract RewardsStakingTest is Test {
     MockERC20 public rewardToken2;
     
     address public owner;
-    address public user1;
-    address public user2;
-    address public user3;
+    address public alice;
+    address public bob;
+    address public charlie;
+    address public user4;
     
     uint256 public constant INITIAL_TOKEN_BALANCE = 1_000_000 * 10**18;
     uint256 public constant INITIAL_USER_BALANCE = 10_000 * 10**18;
@@ -24,9 +25,10 @@ contract RewardsStakingTest is Test {
     
     function setUp() public {
         owner = address(this);
-        user1 = makeAddr("user1");
-        user2 = makeAddr("user2");
-        user3 = makeAddr("user3");
+        alice = makeAddr("user1");
+        bob = makeAddr("user2");
+        charlie = makeAddr("user3");
+        user4 = makeAddr("user4");
         
         // Deploy tokens
         stakingToken = new MockERC20("Staking Token", "STAKE", 18, INITIAL_TOKEN_BALANCE);
@@ -36,26 +38,11 @@ contract RewardsStakingTest is Test {
         // Deploy staking contract
         staking = new RewardsStaking(stakingToken);
         
-        // // Add reward tokens
-        // staking.addRewardToken(address(rewardToken1));
-        // staking.addRewardToken(address(rewardToken2));
-        
-        // // Transfer tokens to users
-        stakingToken.transfer(user1, 10_000 * 10**18);
-        stakingToken.transfer(user2, 10_000 * 10**18);
-        stakingToken.transfer(user3, 10_000 * 10**18);
-        
-        // // Approve users
-        // vm.prank(user1);
-        // stakingToken.approve(address(staking), type(uint256).max);
-        // vm.prank(user2);
-        // stakingToken.approve(address(staking), type(uint256).max);
-        // vm.prank(user3);
-        // stakingToken.approve(address(staking), type(uint256).max);
-        
-        // // Approve reward tokens
-        // rewardToken1.approve(address(staking), type(uint256).max);
-        // rewardToken2.approve(address(staking), type(uint256).max);
+        // Transfer tokens to users
+        stakingToken.transfer(alice, 10_000 * 10**18);
+        stakingToken.transfer(bob, 10_000 * 10**18);
+        stakingToken.transfer(charlie, 10_000 * 10**18);
+        stakingToken.transfer(user4, 10_000 * 10**18);
     }
     
     function test_Constructor() public {
@@ -152,7 +139,7 @@ contract RewardsStakingTest is Test {
     function test_Stake_RevertIfTooSmall() public {
         uint256 amount = MIN_STAKING_AMOUNT - 1;
         
-        vm.startPrank(user1);
+        vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
         vm.expectRevert(RewardsStaking.InvalidAmount.selector);
         staking.stake(amount, RewardsStaking.LockType.LIQUID);
@@ -162,34 +149,34 @@ contract RewardsStakingTest is Test {
     function test_Stake_Liquid() public {
         uint256 amount = 1000 * 10**18;
         
-        vm.startPrank(user1);
+        vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
         staking.stake(amount, RewardsStaking.LockType.LIQUID);
         vm.stopPrank();
         
         // test position
-        assertEq(staking.getUserPositionCount(user1), 1);
-        RewardsStaking.StakingPosition memory position = staking.getUserPosition(user1, 0);
+        assertEq(staking.getUserPositionCount(alice), 1);
+        RewardsStaking.StakingPosition memory position = staking.getUserPosition(alice, 0);
         assertEq(position.amount, amount);
         assertEq(uint(position.lockType), uint(RewardsStaking.LockType.LIQUID));
-        assertEq(position.cooldownStartDaySinceDeployment, 0);
+        assertEq(position.cooldownEndDaySinceDeployment, 0);
         uint256 deploymentDay = staking.deploymentDay();
         uint256 startDay = deploymentDay + 1;
         assertEq(position.startDaySinceDeployment, startDay);
         assertEq(position.unlockDaySinceDeployment, type(uint32).max);
 
         assertEq(staking.totalStaked(), amount);
-        assertEq(stakingToken.balanceOf(user1), INITIAL_USER_BALANCE - amount);
+        assertEq(stakingToken.balanceOf(alice), INITIAL_USER_BALANCE - amount);
 
         // test weight delta 1000 * 10**18 * 500 / 1000
-        assertEq(staking.userWeightDelta(user1, startDay), 500 * 10**18);
+        assertEq(staking.userWeightDelta(alice, startDay), 500 * 10**18);
         assertEq(staking.totalWeightDelta(startDay), 500 * 10**18);
     }
     
     function test_Stake_Locked() public {
         uint256 amount = 1000 * 10**18;
         
-        vm.startPrank(user1);
+        vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
         staking.stake(amount, RewardsStaking.LockType.LOCK_3M);
         vm.stopPrank();
@@ -197,25 +184,25 @@ contract RewardsStakingTest is Test {
         uint256 deploymentDay = staking.deploymentDay();
         uint256 startDay = deploymentDay + 1;
         
-        RewardsStaking.StakingPosition memory position = staking.getUserPosition(user1, 0);
+        RewardsStaking.StakingPosition memory position = staking.getUserPosition(alice, 0);
         assertEq(position.amount, amount);
         assertEq(uint(position.lockType), uint(RewardsStaking.LockType.LOCK_3M));
         assertGt(position.unlockDaySinceDeployment, position.startDaySinceDeployment);
-        assertEq(position.cooldownStartDaySinceDeployment, 0);
+        assertEq(position.cooldownEndDaySinceDeployment, 0);
         assertEq(position.startDaySinceDeployment, startDay);
         assertEq(position.unlockDaySinceDeployment, startDay + 90);
 
         assertEq(staking.totalStaked(), amount);
-        assertEq(stakingToken.balanceOf(user1), INITIAL_USER_BALANCE - amount);
+        assertEq(stakingToken.balanceOf(alice), INITIAL_USER_BALANCE - amount);
 
-        assertEq(staking.userWeightDelta(user1, deploymentDay), 0);
+        assertEq(staking.userWeightDelta(alice, deploymentDay), 0);
         assertEq(staking.totalWeightDelta(deploymentDay), 0);
 
         // test weight delta 1000 * 10**18 * 625 / 1000
-        assertEq(staking.userWeightDelta(user1, startDay), 625 * 10**18);
+        assertEq(staking.userWeightDelta(alice, startDay), 625 * 10**18);
         assertEq(staking.totalWeightDelta(startDay), 625 * 10**18);
 
-        assertEq(staking.userWeightDelta(user1, startDay + 90), -625 * 10**18);
+        assertEq(staking.userWeightDelta(alice, startDay + 90), -625 * 10**18);
         assertEq(staking.totalWeightDelta(startDay + 90), -625 * 10**18);
     }
 
@@ -223,7 +210,7 @@ contract RewardsStakingTest is Test {
         uint256 stakeAmount = 1000 * 10**18;
         
         // User creates multiple positions
-        vm.startPrank(user1);
+        vm.startPrank(alice);
         stakingToken.approve(address(staking), stakeAmount);
         staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
         
@@ -234,12 +221,12 @@ contract RewardsStakingTest is Test {
         staking.stake(stakeAmount / 2, RewardsStaking.LockType.LOCK_1M);
         vm.stopPrank();
         
-        assertEq(staking.getUserPositionCount(user1), 3);
+        assertEq(staking.getUserPositionCount(alice), 3);
         
         // Check each position
-        RewardsStaking.StakingPosition memory pos0 = staking.getUserPosition(user1, 0);
-        RewardsStaking.StakingPosition memory pos1 = staking.getUserPosition(user1, 1);
-        RewardsStaking.StakingPosition memory pos2 = staking.getUserPosition(user1, 2);
+        RewardsStaking.StakingPosition memory pos0 = staking.getUserPosition(alice, 0);
+        RewardsStaking.StakingPosition memory pos1 = staking.getUserPosition(alice, 1);
+        RewardsStaking.StakingPosition memory pos2 = staking.getUserPosition(alice, 2);
         
         assertEq(pos0.amount, stakeAmount);
         uint256 deploymentDay = staking.deploymentDay();
@@ -248,32 +235,32 @@ contract RewardsStakingTest is Test {
         assertEq(uint(pos0.lockType), uint(RewardsStaking.LockType.LIQUID));
         assertEq(pos0.startDaySinceDeployment, startDay);
         assertEq(pos0.unlockDaySinceDeployment, type(uint32).max);
-        assertEq(pos0.cooldownStartDaySinceDeployment, 0);
+        assertEq(pos0.cooldownEndDaySinceDeployment, 0);
         
         assertEq(pos1.amount, stakeAmount * 2);
         assertEq(uint(pos1.lockType), uint(RewardsStaking.LockType.LOCK_3M));
         assertEq(pos1.startDaySinceDeployment, startDay);
         assertEq(pos1.unlockDaySinceDeployment, startDay + 90);
-        assertEq(pos1.cooldownStartDaySinceDeployment, 0);
+        assertEq(pos1.cooldownEndDaySinceDeployment, 0);
         
         assertEq(pos2.amount, stakeAmount / 2);
         assertEq(uint(pos2.lockType), uint(RewardsStaking.LockType.LOCK_1M));
         assertEq(pos2.startDaySinceDeployment, startDay);
         assertEq(pos2.unlockDaySinceDeployment, startDay + 30);
-        assertEq(pos2.cooldownStartDaySinceDeployment, 0);
+        assertEq(pos2.cooldownEndDaySinceDeployment, 0);
 
         uint256 totalStaked = stakeAmount + stakeAmount * 2 + stakeAmount / 2;
         assertEq(staking.totalStaked(), totalStaked);
-        assertEq(stakingToken.balanceOf(user1), INITIAL_USER_BALANCE - totalStaked);
+        assertEq(stakingToken.balanceOf(alice), INITIAL_USER_BALANCE - totalStaked);
 
         // test weight delta 1000 * 0.5 + 2000 * 0.625 + 500 * 0.55
-        assertEq(staking.userWeightDelta(user1, startDay), (500 + 625 * 2 + 550 * 0.5) * 10**18);
+        assertEq(staking.userWeightDelta(alice, startDay), (500 + 625 * 2 + 550 * 0.5) * 10**18);
         assertEq(staking.totalWeightDelta(startDay), (500 + 625 * 2 + 550 * 0.5) * 10**18);
 
-        assertEq(staking.userWeightDelta(user1, startDay + 30), -(550 * 0.5) * 10**18);
+        assertEq(staking.userWeightDelta(alice, startDay + 30), -(550 * 0.5) * 10**18);
         assertEq(staking.totalWeightDelta(startDay + 30), -(550 * 0.5) * 10**18);
 
-        assertEq(staking.userWeightDelta(user1, startDay + 90), -(625 * 2) * 10**18);
+        assertEq(staking.userWeightDelta(alice, startDay + 90), -(625 * 2) * 10**18);
         assertEq(staking.totalWeightDelta(startDay + 90), -(625 * 2) * 10**18);
 
     }
@@ -283,7 +270,7 @@ contract RewardsStakingTest is Test {
         
         staking.pause();
         
-        vm.startPrank(user1);
+        vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
         vm.expectRevert();
         staking.stake(amount, RewardsStaking.LockType.LIQUID);
@@ -296,43 +283,43 @@ contract RewardsStakingTest is Test {
         uint256 stakeAmount3 = 1000 * 10**18;
         
         // Multiple users stake
-        vm.startPrank(user1);
+        vm.startPrank(alice);
         stakingToken.approve(address(staking), stakeAmount1);
         staking.stake(stakeAmount1, RewardsStaking.LockType.LIQUID);
         vm.stopPrank();
 
         
-        vm.startPrank(user2);
+        vm.startPrank(bob);
         stakingToken.approve(address(staking), stakeAmount2);
         staking.stake(stakeAmount2, RewardsStaking.LockType.LOCK_1M);
         vm.stopPrank();
         
-        vm.startPrank(user3);
+        vm.startPrank(charlie);
         stakingToken.approve(address(staking), stakeAmount3);
         staking.stake(stakeAmount3, RewardsStaking.LockType.LOCK_3M);
         vm.stopPrank();
         
         assertEq(staking.totalStaked(), stakeAmount1 + stakeAmount2 + stakeAmount3);
-        assertEq(staking.getUserPositionCount(user1), 1);
-        assertEq(staking.getUserPositionCount(user2), 1);
-        assertEq(staking.getUserPositionCount(user3), 1);
+        assertEq(staking.getUserPositionCount(alice), 1);
+        assertEq(staking.getUserPositionCount(bob), 1);
+        assertEq(staking.getUserPositionCount(charlie), 1);
 
         uint256 deploymentDay = staking.deploymentDay();
         uint256 startDay = deploymentDay + 1;
 
-        assertEq(staking.userWeightDelta(user1, startDay), 500 * 10**18);
-        assertEq(staking.userWeightDelta(user2, startDay), 550 * 10**18);
-        assertEq(staking.userWeightDelta(user3, startDay), 625 * 10**18);
+        assertEq(staking.userWeightDelta(alice, startDay), 500 * 10**18);
+        assertEq(staking.userWeightDelta(bob, startDay), 550 * 10**18);
+        assertEq(staking.userWeightDelta(charlie, startDay), 625 * 10**18);
         assertEq(staking.totalWeightDelta(startDay), (500 + 550 + 625) * 10**18);
 
-        assertEq(staking.userWeightDelta(user1, startDay + 30), 0);
-        assertEq(staking.userWeightDelta(user2, startDay + 30), -550 * 10**18);
-        assertEq(staking.userWeightDelta(user3, startDay + 30), 0);
+        assertEq(staking.userWeightDelta(alice, startDay + 30), 0);
+        assertEq(staking.userWeightDelta(bob, startDay + 30), -550 * 10**18);
+        assertEq(staking.userWeightDelta(charlie, startDay + 30), 0);
         assertEq(staking.totalWeightDelta(startDay + 30), -550 * 10**18);
 
-        assertEq(staking.userWeightDelta(user1, startDay + 90), 0);
-        assertEq(staking.userWeightDelta(user2, startDay + 90), 0);
-        assertEq(staking.userWeightDelta(user3, startDay + 90), -625 * 10**18);
+        assertEq(staking.userWeightDelta(alice, startDay + 90), 0);
+        assertEq(staking.userWeightDelta(bob, startDay + 90), 0);
+        assertEq(staking.userWeightDelta(charlie, startDay + 90), -625 * 10**18);
         assertEq(staking.totalWeightDelta(startDay + 90), -625 * 10**18);
     }
 
@@ -382,7 +369,7 @@ contract RewardsStakingTest is Test {
     }
 
     function test_Withdraw_RevertIfIncorrectIndex() public {
-        vm.startPrank(user1);
+        vm.startPrank(alice);
         stakingToken.approve(address(staking), MIN_STAKING_AMOUNT);
         staking.stake(MIN_STAKING_AMOUNT, RewardsStaking.LockType.LIQUID);
         
@@ -391,18 +378,281 @@ contract RewardsStakingTest is Test {
         vm.stopPrank();
     }
     
+    function test_Withdraw_RevertIfLocked() public {
+        uint256 amount = MIN_STAKING_AMOUNT;
+        
+        vm.startPrank(alice);
+
+        stakingToken.approve(address(staking), amount);
+        staking.stake(amount, RewardsStaking.LockType.LOCK_1M);
+
+        // Try to withdraw before unlock
+        vm.warp(block.timestamp + 30 days); // staking starts on block.timestamp + 1 and ends on block.timestamp + 30 days
+        
+        vm.expectRevert(RewardsStaking.PositionLocked.selector);
+        staking.withdraw(0);
+
+        vm.stopPrank();
+    }
+
     function test_WithdrawLiquid_InitiateCooldown() public {
         uint256 amount = MIN_STAKING_AMOUNT;
         
-        vm.startPrank(user1);
+        vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
         staking.stake(amount, RewardsStaking.LockType.LIQUID);
         
         staking.withdraw(0);
         vm.stopPrank();
         
-        RewardsStaking.StakingPosition memory position = staking.getUserPosition(user1, 0);
-        assertGt(position.cooldownStartDaySinceDeployment, 0);
+        RewardsStaking.StakingPosition memory position = staking.getUserPosition(alice, 0);
+        assertEq(position.cooldownEndDaySinceDeployment, 7);
         assertEq(position.amount, amount); // Amount should still be there
+    }
+
+    function test_WithdrawLiquid_RevertIfCooldownNotFinished() public {
+        uint256 amount = MIN_STAKING_AMOUNT;
+        
+        vm.startPrank(alice);
+        
+        stakingToken.approve(address(staking), amount);
+        staking.stake(amount, RewardsStaking.LockType.LIQUID);
+        
+        // Initiate cooldown
+        staking.withdraw(0);
+        
+        // Try to withdraw before cooldown
+        vm.warp(block.timestamp + 6 days);
+        
+        vm.expectRevert(RewardsStaking.CooldownNotFinished.selector);
+        staking.withdraw(0);
+
+        vm.stopPrank();
+    }
+    
+    function test_WithdrawLiquid_AfterCooldown() public {
+        uint256 amount = 1000 * 10**18;
+        
+        vm.startPrank(alice);
+        stakingToken.approve(address(staking), amount);
+        staking.stake(amount, RewardsStaking.LockType.LIQUID);
+        
+        // Initiate cooldown
+        staking.withdraw(0);
+        
+        // Skip cooldown period
+        vm.warp(block.timestamp + 7 days);
+        
+        uint256 balanceBefore = stakingToken.balanceOf(alice);
+        
+        staking.withdraw(0);
+        
+        assertEq(stakingToken.balanceOf(alice), balanceBefore + amount);
+        assertEq(staking.totalStaked(), 0);
+        
+        RewardsStaking.StakingPosition memory position = staking.getUserPosition(alice, 0);
+        assertEq(position.amount, 0);
+
+        vm.stopPrank();
+    }
+    
+    function test_WithdrawLocked_AfterUnlock() public {
+        uint256 amount = MIN_STAKING_AMOUNT;
+        
+        vm.startPrank(alice);
+
+        stakingToken.approve(address(staking), amount);
+        staking.stake(amount, RewardsStaking.LockType.LOCK_1M);
+        
+        // Skip lock period
+        vm.warp(block.timestamp + 31 days);
+        
+        uint256 balanceBefore = stakingToken.balanceOf(alice);
+        
+        staking.withdraw(0);
+        
+        assertEq(stakingToken.balanceOf(alice), balanceBefore + amount);
+        assertEq(staking.totalStaked(), 0);
+        
+        vm.stopPrank();
+    }
+    
+    function test_Withdraw_RevertIfPositionNotExists() public {
+        vm.prank(alice);
+        vm.expectRevert(RewardsStaking.PositionNotExists.selector);
+        staking.withdraw(0);
+    }
+    
+    function test_ClaimRewards() public {
+        uint256 stakeAmount = MIN_STAKING_AMOUNT;
+        uint256 topUpAmount = 1000 * 10**18;
+        
+        staking.addRewardToken(address(rewardToken1));
+        
+        // Top up rewards
+        rewardToken1.approve(address(staking), topUpAmount);
+        staking.topUp(address(rewardToken1), topUpAmount);
+        
+        // User stakes
+        vm.startPrank(alice);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        vm.stopPrank();
+        
+        // Skip some time
+        vm.warp(block.timestamp + 2 days);
+        
+        uint256 balanceBefore = rewardToken1.balanceOf(alice);
+        
+        vm.prank(alice);
+        staking.claim();
+        
+        assertGt(rewardToken1.balanceOf(alice), balanceBefore);
+    }
+    
+    function test_ClaimRewards_RevertIfNothingToClaim() public {
+        uint256 stakeAmount = MIN_STAKING_AMOUNT;
+
+        staking.addRewardToken(address(rewardToken1));
+        
+        // User stakes
+        vm.startPrank(alice);
+
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        
+        // Try to claim immediately (nothing to claim)
+        vm.expectRevert(RewardsStaking.NothingToClaim.selector);
+        staking.claim();
+
+        vm.stopPrank();
+
+    }
+    
+    function test_ClaimRewards_RevertIfEmptyRewardTokens() public {
+        uint256 stakeAmount = MIN_STAKING_AMOUNT;
+        
+        // User stakes
+        vm.startPrank(alice);
+
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        
+        // Skip some time
+        vm.warp(block.timestamp + 2 days);
+        
+        vm.expectRevert(RewardsStaking.EmptyRewardTokens.selector);
+        staking.claim();
+
+        vm.stopPrank();
+
+    }
+    
+    function test_TopUp_DifferentLockTypesWeights() public {
+        uint256 stakeAmount = MIN_STAKING_AMOUNT;
+        
+        // Stakes with different lock types
+        vm.startPrank(alice);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        vm.stopPrank();
+        
+        vm.startPrank(bob);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_12M);
+        vm.stopPrank();
+        
+        // Top up rewards
+        staking.addRewardToken(address(rewardToken1));
+        rewardToken1.approve(address(staking), 1000 * 10**18);
+        staking.topUp(address(rewardToken1), 1000 * 10**18);
+        
+        // Skip time
+        vm.warp(block.timestamp + 2 days);
+        
+        // Claim rewards
+        vm.prank(alice);
+        staking.claim();
+        
+        vm.prank(bob);
+        staking.claim();
+        
+        // User2 should have more rewards due to higher lock multiplier
+        assertGt(rewardToken1.balanceOf(bob), rewardToken1.balanceOf(alice));
+    }
+    
+    function test_Pause_Unpause() public {
+        staking.pause();
+        assertTrue(staking.paused());
+        
+        staking.unpause();
+        assertFalse(staking.paused());
+    }
+    
+    function test_OnlyOwner_Functions() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        staking.pause();
+        
+        vm.prank(alice);
+        vm.expectRevert();
+        staking.unpause();
+        
+        vm.prank(alice);
+        vm.expectRevert();
+        staking.addRewardToken(address(rewardToken1));
+        
+        vm.prank(alice);
+        vm.expectRevert();
+        staking.removeRewardToken(address(rewardToken1));
+    }
+    
+    function test_RejectEther() public {
+        vm.expectRevert("Contract does not accept ETH");
+        address(staking).call{value: 1 ether}("");
+    }
+
+    function test_RejectEther2() public {
+        vm.expectRevert("Contract does not accept ETH");
+    payable(address(staking)).transfer(1 ether);
+    }
+
+    function test_RevertOnFallback() public {
+        vm.expectRevert("Fallback function not allowed");
+        (bool success, ) = address(staking).call{value: 1 ether}(
+            abi.encodeWithSignature("nonExistentFunction()")
+        );
+    }
+    
+    function test_GetCurrentDaySinceDeployment() public {
+        uint256 currentDay = staking.getCurrentDaySinceDeployment();
+        assertEq(currentDay, 0);
+        
+        vm.warp(block.timestamp + 2 days);
+        currentDay = staking.getCurrentDaySinceDeployment();
+        assertEq(currentDay, 2);
+    }
+    
+    function test_EmissionDecay() public {
+        uint256 topUpAmount = 90 * 10**18; // 90 * 10**18 tokens for 90 days
+        
+        staking.addRewardToken(address(rewardToken1));
+        rewardToken1.approve(address(staking), topUpAmount);
+        staking.topUp(address(rewardToken1), topUpAmount);
+        
+        // Check that emissions are distributed over 90 days with decay
+        uint256 day1Emissions = staking.emissionsByToken(address(rewardToken1), 0);
+        uint256 day90Emissions = staking.emissionsByToken(address(rewardToken1), 89);
+
+        uint256 tottalEmissions = 0;
+        for (uint256 i = 0; i < 90; i++) {
+            tottalEmissions += staking.emissionsByToken(address(rewardToken1), i);
+
+            assertGt(staking.emissionsByToken(address(rewardToken1), i), staking.emissionsByToken(address(rewardToken1), i + 1)); // next day should have less emissions
+        }
+        
+        assertGt(day1Emissions, 1 * 10**18);
+        assertLt(day90Emissions, 1 * 10**18);
+        assertEq(tottalEmissions, topUpAmount);
     }
 }
