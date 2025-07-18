@@ -16,7 +16,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         uint128 amount;
         uint32 startDaySinceDeployment;
         uint32 unlockDaySinceDeployment;
-        uint32 cooldownStartDaySinceDeployment;
+        uint32 cooldownEndDaySinceDeployment;
         LockType lockType;
     }
 
@@ -133,7 +133,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
             amount: uint128(amount),
             startDaySinceDeployment: startDay,
             unlockDaySinceDeployment: unlockDay,
-            cooldownStartDaySinceDeployment: 0,
+            cooldownEndDaySinceDeployment: 0,
             lockType: lockType
         });
 
@@ -149,34 +149,43 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
 
     function withdraw(uint256 index) external nonReentrant {
         StakingPosition storage pos = userPositions[msg.sender][index];
-        if (pos.amount == 0) revert PositionNotExists();
+        uint256 amount = pos.amount;
+        if (amount == 0) revert PositionNotExists();
 
         uint256 currentDaySinceDeployment = getCurrentDaySinceDeployment();
-        
-        if (pos.lockType == LockType.LIQUID) {
-            if (pos.cooldownStartDaySinceDeployment == 0) {
-                pos.cooldownStartDaySinceDeployment = uint32(currentDaySinceDeployment);
-                emit CooldownInitiated(msg.sender, index);
-                return;
-            } else if (currentDaySinceDeployment < (uint256(pos.cooldownStartDaySinceDeployment) + COOLDOWN)) {
-                revert CooldownNotFinished();
-            }
-        } else {
+
+        if (pos.lockType != LockType.LIQUID) {
             if (currentDaySinceDeployment < pos.unlockDaySinceDeployment) revert PositionLocked();
+
+            uint256 weight = calculateWeight(amount, pos.lockType);
+            _updateWeightDelta(msg.sender, currentDaySinceDeployment, pos.unlockDaySinceDeployment, -int256(weight));
+
+            _processWithdraw(msg.sender, index, pos);
+            return;
+        }
+        
+        // liquid staking
+        if (pos.cooldownEndDaySinceDeployment == 0) {
+            pos.cooldownEndDaySinceDeployment = uint32(currentDaySinceDeployment + COOLDOWN);
+
+            uint256 weight = calculateWeight(amount, pos.lockType);
+            _updateWeightDelta(msg.sender, currentDaySinceDeployment, type(uint32).max, -int256(weight));
+
+            emit CooldownInitiated(msg.sender, index);
+            return;
+        }
+            
+        if (currentDaySinceDeployment < uint256(pos.cooldownEndDaySinceDeployment)) {
+            revert CooldownNotFinished();
         }
 
-        _processWithdraw(msg.sender, index, pos, currentDaySinceDeployment);
+        _processWithdraw(msg.sender, index, pos);
     }
 
-    function _processWithdraw(address user, uint256 index, StakingPosition storage pos, uint256 currentDay) internal {
+    function _processWithdraw(address user, uint256 index, StakingPosition storage pos) internal {
         uint256 amount = pos.amount;
-        if (amount == 0) revert InvalidAmount();
-
-        uint256 weight = calculateWeight(amount, pos.lockType);
-        _updateWeightDelta(user, currentDay, pos.unlockDaySinceDeployment, -int256(weight));
-
-        totalStaked -= amount;
         
+        totalStaked -= amount;
         pos.amount = 0;
 
         stakingToken.safeTransfer(user, amount);
@@ -271,8 +280,8 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         totalWeightDelta[startDaySinceDeployment] += delta;
 
         if (endDaySinceDeployment < type(uint256).max) {
-            userWeightDelta[user][endDaySinceDeployment + 1] -= delta;
-            totalWeightDelta[endDaySinceDeployment + 1] -= delta;
+            userWeightDelta[user][endDaySinceDeployment] -= delta;
+            totalWeightDelta[endDaySinceDeployment] -= delta;
         }
     }
 
