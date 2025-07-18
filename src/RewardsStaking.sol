@@ -4,10 +4,10 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step,Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
-contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
+contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
     using SafeERC20 for IERC20;
 
     enum LockType { LIQUID, LOCK_1M, LOCK_3M, LOCK_6M, LOCK_12M }
@@ -249,11 +249,16 @@ contract RewardsStaking is ReentrancyGuard, Ownable, Pausable {
         (uint256[] memory decayWeightsByDay, uint256 totalDecayWeight) = _calculateDecayWeights();
 
         // Distribute emissions
+        uint256 totalDistributed;
         for (uint256 i = 0; i < DECAY_DAYS; ) {
             uint256 dailyAmount = (amount * decayWeightsByDay[i]) / totalDecayWeight;
             emissionsByToken[rewardToken][currentDay + i] += dailyAmount;
+            totalDistributed += dailyAmount;
             unchecked { ++i; }
         }
+
+        uint256 remainder = amount - totalDistributed;
+        emissionsByToken[rewardToken][currentDay + DECAY_DAYS - 1] += remainder;
 
         emit TopUp(rewardToken, amount);
     }
