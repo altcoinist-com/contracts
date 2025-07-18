@@ -142,7 +142,7 @@ contract RewardsStakingTest is Test {
         vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
         vm.expectRevert(RewardsStaking.InvalidAmount.selector);
-        staking.stake(amount, RewardsStaking.LockType.LIQUID);
+        staking.stake(amount, RewardsStaking.LockType.LIQUID, false);
         vm.stopPrank();
     }
     
@@ -151,7 +151,7 @@ contract RewardsStakingTest is Test {
         
         vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
-        staking.stake(amount, RewardsStaking.LockType.LIQUID);
+        staking.stake(amount, RewardsStaking.LockType.LIQUID, false);
         vm.stopPrank();
         
         // test position
@@ -178,7 +178,7 @@ contract RewardsStakingTest is Test {
         
         vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
-        staking.stake(amount, RewardsStaking.LockType.LOCK_3M);
+        staking.stake(amount, RewardsStaking.LockType.LOCK_3M, false);
         vm.stopPrank();
         
         uint256 deploymentDay = staking.deploymentDay();
@@ -212,13 +212,13 @@ contract RewardsStakingTest is Test {
         // User creates multiple positions
         vm.startPrank(alice);
         stakingToken.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID, false);
         
         stakingToken.approve(address(staking), stakeAmount * 2);
-        staking.stake(stakeAmount * 2, RewardsStaking.LockType.LOCK_3M);
+        staking.stake(stakeAmount * 2, RewardsStaking.LockType.LOCK_3M, false);
         
         stakingToken.approve(address(staking), stakeAmount / 2);
-        staking.stake(stakeAmount / 2, RewardsStaking.LockType.LOCK_1M);
+        staking.stake(stakeAmount / 2, RewardsStaking.LockType.LOCK_1M, false);
         vm.stopPrank();
         
         assertEq(staking.getUserPositionCount(alice), 3);
@@ -273,7 +273,7 @@ contract RewardsStakingTest is Test {
         vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
         vm.expectRevert();
-        staking.stake(amount, RewardsStaking.LockType.LIQUID);
+        staking.stake(amount, RewardsStaking.LockType.LIQUID, false);
         vm.stopPrank();
     }
 
@@ -285,18 +285,18 @@ contract RewardsStakingTest is Test {
         // Multiple users stake
         vm.startPrank(alice);
         stakingToken.approve(address(staking), stakeAmount1);
-        staking.stake(stakeAmount1, RewardsStaking.LockType.LIQUID);
+        staking.stake(stakeAmount1, RewardsStaking.LockType.LIQUID, false);
         vm.stopPrank();
 
         
         vm.startPrank(bob);
         stakingToken.approve(address(staking), stakeAmount2);
-        staking.stake(stakeAmount2, RewardsStaking.LockType.LOCK_1M);
+        staking.stake(stakeAmount2, RewardsStaking.LockType.LOCK_1M, false);
         vm.stopPrank();
         
         vm.startPrank(charlie);
         stakingToken.approve(address(staking), stakeAmount3);
-        staking.stake(stakeAmount3, RewardsStaking.LockType.LOCK_3M);
+        staking.stake(stakeAmount3, RewardsStaking.LockType.LOCK_3M, false);
         vm.stopPrank();
         
         assertEq(staking.totalStaked(), stakeAmount1 + stakeAmount2 + stakeAmount3);
@@ -371,10 +371,10 @@ contract RewardsStakingTest is Test {
     function test_Withdraw_RevertIfIncorrectIndex() public {
         vm.startPrank(alice);
         stakingToken.approve(address(staking), MIN_STAKING_AMOUNT);
-        staking.stake(MIN_STAKING_AMOUNT, RewardsStaking.LockType.LIQUID);
+        staking.stake(MIN_STAKING_AMOUNT, RewardsStaking.LockType.LIQUID, false);
         
         vm.expectRevert();
-        staking.withdraw(1);
+        staking.withdraw(1, false);
         vm.stopPrank();
     }
     
@@ -384,13 +384,13 @@ contract RewardsStakingTest is Test {
         vm.startPrank(alice);
 
         stakingToken.approve(address(staking), amount);
-        staking.stake(amount, RewardsStaking.LockType.LOCK_1M);
+        staking.stake(amount, RewardsStaking.LockType.LOCK_1M, false);
 
         // Try to withdraw before unlock
         vm.warp(block.timestamp + 30 days); // staking starts on block.timestamp + 1 and ends on block.timestamp + 30 days
         
         vm.expectRevert(RewardsStaking.PositionLocked.selector);
-        staking.withdraw(0);
+        staking.withdraw(0, false);
 
         vm.stopPrank();
     }
@@ -400,9 +400,9 @@ contract RewardsStakingTest is Test {
         
         vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
-        staking.stake(amount, RewardsStaking.LockType.LIQUID);
+        staking.stake(amount, RewardsStaking.LockType.LIQUID, false);
         
-        staking.withdraw(0);
+        staking.withdraw(0, false);
         vm.stopPrank();
         
         RewardsStaking.StakingPosition memory position = staking.getUserPosition(alice, 0);
@@ -416,16 +416,16 @@ contract RewardsStakingTest is Test {
         vm.startPrank(alice);
         
         stakingToken.approve(address(staking), amount);
-        staking.stake(amount, RewardsStaking.LockType.LIQUID);
+        staking.stake(amount, RewardsStaking.LockType.LIQUID, false);
         
         // Initiate cooldown
-        staking.withdraw(0);
+        staking.withdraw(0, false);
         
         // Try to withdraw before cooldown
         vm.warp(block.timestamp + 6 days);
         
         vm.expectRevert(RewardsStaking.CooldownNotFinished.selector);
-        staking.withdraw(0);
+        staking.withdraw(0, false);
 
         vm.stopPrank();
     }
@@ -435,17 +435,17 @@ contract RewardsStakingTest is Test {
         
         vm.startPrank(alice);
         stakingToken.approve(address(staking), amount);
-        staking.stake(amount, RewardsStaking.LockType.LIQUID);
+        staking.stake(amount, RewardsStaking.LockType.LIQUID, false);
         
         // Initiate cooldown
-        staking.withdraw(0);
+        staking.withdraw(0, false);
         
         // Skip cooldown period
         vm.warp(block.timestamp + 7 days);
         
         uint256 balanceBefore = stakingToken.balanceOf(alice);
         
-        staking.withdraw(0);
+        staking.withdraw(0, false);
         
         assertEq(stakingToken.balanceOf(alice), balanceBefore + amount);
         assertEq(staking.totalStaked(), 0);
@@ -462,14 +462,14 @@ contract RewardsStakingTest is Test {
         vm.startPrank(alice);
 
         stakingToken.approve(address(staking), amount);
-        staking.stake(amount, RewardsStaking.LockType.LOCK_1M);
+        staking.stake(amount, RewardsStaking.LockType.LOCK_1M, false);
         
         // Skip lock period
         vm.warp(block.timestamp + 31 days);
         
         uint256 balanceBefore = stakingToken.balanceOf(alice);
         
-        staking.withdraw(0);
+        staking.withdraw(0, false);
         
         assertEq(stakingToken.balanceOf(alice), balanceBefore + amount);
         assertEq(staking.totalStaked(), 0);
@@ -480,7 +480,7 @@ contract RewardsStakingTest is Test {
     function test_Withdraw_RevertIfPositionNotExists() public {
         vm.prank(alice);
         vm.expectRevert(RewardsStaking.PositionNotExists.selector);
-        staking.withdraw(0);
+        staking.withdraw(0, false);
     }
     
     function test_ClaimRewards() public {
@@ -496,7 +496,7 @@ contract RewardsStakingTest is Test {
         // User stakes
         vm.startPrank(alice);
         stakingToken.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID, false);
         vm.stopPrank();
         
         // Skip some time
@@ -510,7 +510,7 @@ contract RewardsStakingTest is Test {
         assertGt(rewardToken1.balanceOf(alice), balanceBefore);
     }
     
-    function test_ClaimRewards_RevertIfNothingToClaim() public {
+    function test_ClaimRewards_IfNothingToClaim() public {
         uint256 stakeAmount = MIN_STAKING_AMOUNT;
 
         staking.addRewardToken(address(rewardToken1));
@@ -519,11 +519,13 @@ contract RewardsStakingTest is Test {
         vm.startPrank(alice);
 
         stakingToken.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID, false);
         
         // Try to claim immediately (nothing to claim)
-        vm.expectRevert(RewardsStaking.NothingToClaim.selector);
+        uint256 balanceBefore = rewardToken1.balanceOf(alice);
         staking.claim();
+        uint256 balanceAfter = rewardToken1.balanceOf(alice);
+        assertEq(balanceAfter, balanceBefore);
 
         vm.stopPrank();
 
@@ -536,13 +538,15 @@ contract RewardsStakingTest is Test {
         vm.startPrank(alice);
 
         stakingToken.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID, false);
         
         // Skip some time
         vm.warp(block.timestamp + 2 days);
         
-        vm.expectRevert(RewardsStaking.EmptyRewardTokens.selector);
+        uint256 balanceBefore = rewardToken1.balanceOf(alice);
         staking.claim();
+        uint256 balanceAfter = rewardToken1.balanceOf(alice);
+        assertEq(balanceAfter, balanceBefore);
 
         vm.stopPrank();
 
@@ -554,12 +558,12 @@ contract RewardsStakingTest is Test {
         // Stakes with different lock types
         vm.startPrank(alice);
         stakingToken.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID, false);
         vm.stopPrank();
         
         vm.startPrank(bob);
         stakingToken.approve(address(staking), stakeAmount);
-        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_12M);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_12M, false);
         vm.stopPrank();
         
         // Top up rewards

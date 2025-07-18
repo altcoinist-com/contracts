@@ -67,8 +67,6 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
     error CooldownNotFinished();
     error PositionLocked();
     error PositionNotExists();
-    error NothingToClaim();
-    error EmptyRewardTokens();
     error ZeroAddress();
 
     constructor(IERC20 _stakingToken) Ownable(msg.sender) {
@@ -119,8 +117,12 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
 
     // ============ STAKING FUNCTIONS ============
 
-    function stake(uint256 amount, LockType lockType) external nonReentrant whenNotPaused {
+    function stake(uint256 amount, LockType lockType, bool autoClaim) external nonReentrant whenNotPaused {
         if (amount < MIN_STAKING_AMOUNT) revert InvalidAmount();
+
+        if (autoClaim) {
+            _claim(msg.sender);
+        }
 
         uint256 currentDay = getCurrentDaySinceDeployment();
         uint32 startDay = uint32(currentDay + 1); // staking starts from the next day
@@ -141,19 +143,22 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
         _updateWeightDelta(msg.sender, startDay, unlockDay, int256(weight));
 
         totalStaked += amount;
-        
+
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
         emit Staked(msg.sender, amount, lockType, positionIndex);
     }
 
-    function withdraw(uint256 index) external nonReentrant {
+    function withdraw(uint256 index, bool autoClaim) external nonReentrant {
         StakingPosition storage pos = userPositions[msg.sender][index];
         uint256 amount = pos.amount;
         if (amount == 0) revert PositionNotExists();
 
-        uint256 currentDaySinceDeployment = getCurrentDaySinceDeployment();
+        if (autoClaim) {
+            _claim(msg.sender);
+        }
 
+        uint256 currentDaySinceDeployment = getCurrentDaySinceDeployment();
         if (pos.lockType != LockType.LIQUID) {
             if (currentDaySinceDeployment < pos.unlockDaySinceDeployment) revert PositionLocked();
 
@@ -163,7 +168,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
             _processWithdraw(msg.sender, index, pos);
             return;
         }
-        
+
         // liquid staking
         if (pos.cooldownEndDaySinceDeployment == 0) {
             pos.cooldownEndDaySinceDeployment = uint32(currentDaySinceDeployment + COOLDOWN);
@@ -174,7 +179,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
             emit CooldownInitiated(msg.sender, index);
             return;
         }
-            
+
         if (currentDaySinceDeployment < uint256(pos.cooldownEndDaySinceDeployment)) {
             revert CooldownNotFinished();
         }
@@ -184,7 +189,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
 
     function _processWithdraw(address user, uint256 index, StakingPosition storage pos) internal {
         uint256 amount = pos.amount;
-        
+
         totalStaked -= amount;
         pos.amount = 0;
 
@@ -194,30 +199,34 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
     }
 
     function claim() external nonReentrant {
+        _claim(msg.sender);
+    }
+
+    function _claim(address userAddress) internal {
         uint256 rewardTokensLength = rewardTokens.length;
-        if (rewardTokensLength == 0) revert EmptyRewardTokens();
+        if (rewardTokensLength == 0) return;
 
         uint256 currentDaySinceDeployment = getCurrentDaySinceDeployment();
-        UserData storage user = userData[msg.sender];
+        UserData storage user = userData[userAddress];
         uint32 lastClaimed = user.lastClaimedDaySinceDeployment;
-        
-        if (lastClaimed >= currentDaySinceDeployment) revert NothingToClaim();
+
+        if (lastClaimed >= currentDaySinceDeployment) return;
 
         user.lastClaimedDaySinceDeployment = uint32(currentDaySinceDeployment);
 
         for (uint256 r = 0; r < rewardTokensLength; ) {
             address rewardToken = rewardTokens[r];
             uint256 totalReward = 0;
-            
+
             int256 cumulativeUserWeight = 0;
             int256 cumulativeTotalWeight = 0;
 
             for (uint256 d = lastClaimed; d < currentDaySinceDeployment; ) {
-                cumulativeUserWeight += userWeightDelta[msg.sender][d];
+                cumulativeUserWeight += userWeightDelta[userAddress][d];
                 cumulativeTotalWeight += totalWeightDelta[d];
-                
+
                 if (cumulativeUserWeight <= 0 || cumulativeTotalWeight <= 0) {
-                    unchecked { ++d; }  
+                    unchecked { ++d; }
                     continue;
                 }
 
@@ -226,13 +235,15 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
                     uint256 userShare = (emissions * uint256(cumulativeUserWeight)) / uint256(cumulativeTotalWeight);
                     totalReward += userShare;
                 }
+
                 unchecked { ++d; }
             }
 
             if (totalReward > 0) {
-                IERC20(rewardToken).safeTransfer(msg.sender, totalReward);
-                emit Claimed(msg.sender, rewardToken, totalReward);
+                IERC20(rewardToken).safeTransfer(userAddress, totalReward);
+                emit Claimed(userAddress, rewardToken, totalReward);
             }
+
             unchecked { ++r; }
         }
     }
@@ -244,7 +255,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
         IERC20(rewardToken).safeTransferFrom(msg.sender, address(this), amount);
 
         uint256 currentDay = getCurrentDaySinceDeployment(); // emissions start from the current day
-        
+
         // Pre-calculate decay weights to save gas
         (uint256[] memory decayWeightsByDay, uint256 totalDecayWeight) = _calculateDecayWeights();
 
@@ -265,7 +276,6 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
 
     function _calculateDecayWeights() internal pure returns (uint256[] memory decayWeightsByDay, uint256 totalWeight) {
         decayWeightsByDay = new uint256[](DECAY_DAYS);
-
         decayWeightsByDay[0] = DECAY_SCALE;
         totalWeight = DECAY_SCALE;
 
@@ -280,20 +290,19 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
         return (amount * getLockMultiplier(lockType)) / WEIGHT_SCALE;
     }
 
-    function _updateWeightDelta(address user, uint256 startDaySinceDeployment, uint256 endDaySinceDeployment, int256 delta) internal {
-        userWeightDelta[user][startDaySinceDeployment] += delta;
-        totalWeightDelta[startDaySinceDeployment] += delta;
+    function _updateWeightDelta(address user, uint256 startDay, uint256 endDay, int256 delta) internal {
+        userWeightDelta[user][startDay] += delta;
+        totalWeightDelta[startDay] += delta;
 
-        if (endDaySinceDeployment < type(uint256).max) {
-            userWeightDelta[user][endDaySinceDeployment] -= delta;
-            totalWeightDelta[endDaySinceDeployment] -= delta;
+        if (endDay < type(uint256).max) {
+            userWeightDelta[user][endDay] -= delta;
+            totalWeightDelta[endDay] -= delta;
         }
     }
 
     function getCurrentDaySinceDeployment() public view returns (uint256) {
         uint256 currentTimestamp = block.timestamp / 1 days;
-        if (currentTimestamp < deploymentDay) return 0;
-        return currentTimestamp - deploymentDay;
+        return currentTimestamp < deploymentDay ? 0 : currentTimestamp - deploymentDay;
     }
 
     function getLockDuration(LockType lt) internal pure returns (uint16) {
