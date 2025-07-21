@@ -509,6 +509,112 @@ contract RewardsStakingTest is Test {
         
         assertGt(rewardToken1.balanceOf(alice), balanceBefore);
     }
+
+    function test_ClaimRewards_MultipleClaims() public {
+        uint256 stakeAmount = MIN_STAKING_AMOUNT;
+        uint256 topUpAmount = 1000 * 10**18;
+        
+        staking.addRewardToken(address(rewardToken1));
+        rewardToken1.approve(address(staking), topUpAmount);
+        staking.topUp(address(rewardToken1), topUpAmount);
+        
+        // User stakes
+        vm.startPrank(alice);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LIQUID, false);
+        
+        // Skip some time
+        vm.warp(block.timestamp + 2 days);
+        
+        uint256 balanceBefore0 = rewardToken1.balanceOf(alice);
+        staking.claim();
+        uint256 balanceAfter1Claim = rewardToken1.balanceOf(alice);
+
+        vm.warp(block.timestamp + 1 days);
+        staking.claim();
+        uint256 balanceAfter2Claim = rewardToken1.balanceOf(alice);
+        vm.stopPrank();
+        
+        console.log("Rewards balance should be greater than before");
+        assertEq(balanceBefore0, 0);
+        assertGt(balanceAfter1Claim, balanceBefore0);
+        console.log("Rewards balance after 2nd claim should be greater than before");
+        assertGt(balanceAfter2Claim, balanceAfter1Claim);
+    }
+
+    // order of claim and withdraw doesnt matter
+    function test_ClaimRewards_WithdrawalWithWithdrawl() public {
+        uint256 stakeAmount = MIN_STAKING_AMOUNT;
+        uint256 topUpAmount = 1000 * 10**18;
+        
+        staking.addRewardToken(address(rewardToken1));
+        rewardToken1.approve(address(staking), topUpAmount);
+        staking.topUp(address(rewardToken1), topUpAmount);
+        
+        // 3 users stakes
+        vm.startPrank(alice);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_1M, false);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_1M, false);
+        vm.stopPrank();
+
+        vm.startPrank(charlie);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_1M, false);
+        vm.stopPrank();
+        
+        
+        // Skip some time
+        vm.warp(block.timestamp + 31 days);
+        
+        uint256 aliceRewardsBalanceBefore = rewardToken1.balanceOf(alice);
+        uint256 aliceStakingBalanceBefore = stakingToken.balanceOf(alice);
+        
+        vm.startPrank(alice);
+        staking.claim();
+        staking.withdraw(0, false);
+        vm.stopPrank();
+        
+        uint256 aliceRewardsBalanceAfter = rewardToken1.balanceOf(alice);
+        uint256 aliceStakingBalanceAfter = stakingToken.balanceOf(alice);
+
+        assertGt(aliceRewardsBalanceAfter, aliceRewardsBalanceBefore);
+        assertEq(aliceStakingBalanceAfter - aliceStakingBalanceBefore, stakeAmount);
+
+        uint256 bobRewardsBalanceBefore = rewardToken1.balanceOf(bob);
+        uint256 bobStakingBalanceBefore = stakingToken.balanceOf(bob);
+        
+        vm.startPrank(bob);
+        staking.withdraw(0, false);
+        staking.claim();
+        vm.stopPrank();
+        
+        uint256 bobRewardsBalanceAfter = rewardToken1.balanceOf(bob);
+        uint256 bobStakingBalanceAfter = stakingToken.balanceOf(bob);
+
+        assertGt(bobRewardsBalanceAfter, bobRewardsBalanceBefore);
+        assertEq(bobStakingBalanceAfter - bobStakingBalanceBefore, stakeAmount);
+
+        uint256 charlieRewardsBalanceBefore = rewardToken1.balanceOf(charlie);
+        uint256 charlieStakingBalanceBefore = stakingToken.balanceOf(charlie);
+
+        vm.prank(charlie);
+        staking.withdraw(0, true);
+        
+        uint256 charlieRewardsBalanceAfter = rewardToken1.balanceOf(charlie);
+        uint256 charlieStakingBalanceAfter = stakingToken.balanceOf(charlie);
+
+        assertGt(charlieRewardsBalanceAfter, charlieRewardsBalanceBefore);
+        assertEq(charlieStakingBalanceAfter - charlieStakingBalanceBefore, stakeAmount);
+
+        assertEq(staking.totalStaked(), 0);
+        assertEq(aliceRewardsBalanceAfter - aliceRewardsBalanceBefore, bobRewardsBalanceAfter - bobRewardsBalanceBefore);
+        assertEq(aliceRewardsBalanceAfter - aliceRewardsBalanceBefore, charlieRewardsBalanceAfter - charlieRewardsBalanceBefore);
+    }
     
     function test_ClaimRewards_IfNothingToClaim() public {
         uint256 stakeAmount = MIN_STAKING_AMOUNT;
@@ -528,7 +634,6 @@ contract RewardsStakingTest is Test {
         assertEq(balanceAfter, balanceBefore);
 
         vm.stopPrank();
-
     }
     
     function test_ClaimRewards_RevertIfEmptyRewardTokens() public {
@@ -549,8 +654,8 @@ contract RewardsStakingTest is Test {
         assertEq(balanceAfter, balanceBefore);
 
         vm.stopPrank();
-
     }
+    
     
     function test_TopUp_DifferentLockTypesWeights() public {
         uint256 stakeAmount = MIN_STAKING_AMOUNT;

@@ -23,6 +23,8 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
     struct UserData {
         uint32 lastClaimedDaySinceDeployment;
         uint32 positionCount;
+        int256 lastClaimedWeight;
+        int256 lastClaimedTotalWeight;
     }
 
     IERC20 public immutable stakingToken;
@@ -218,8 +220,8 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
             address rewardToken = rewardTokens[r];
             uint256 totalReward = 0;
 
-            int256 cumulativeUserWeight = 0;
-            int256 cumulativeTotalWeight = 0;
+            int256 cumulativeUserWeight = user.lastClaimedWeight;
+            int256 cumulativeTotalWeight = user.lastClaimedTotalWeight;
 
             for (uint256 d = lastClaimed; d < currentDaySinceDeployment; ) {
                 cumulativeUserWeight += userWeightDelta[userAddress][d];
@@ -238,6 +240,9 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
 
                 unchecked { ++d; }
             }
+
+            user.lastClaimedWeight = cumulativeUserWeight;
+            user.lastClaimedTotalWeight = cumulativeTotalWeight;
 
             if (totalReward > 0) {
                 IERC20(rewardToken).safeTransfer(userAddress, totalReward);
