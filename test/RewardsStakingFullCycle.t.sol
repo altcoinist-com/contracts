@@ -54,7 +54,6 @@ contract RewardsStakingTest is Test {
         staking.addRewardToken(address(rewardToken2));
         
         // Day 0: Alice stakes liquid, Bob stakes 3M lock
-        uint256 deploymentDay = block.timestamp / 1 days;
         console.log("Day 0: Alice and Bob staked");
         vm.startPrank(alice);
         stakingToken.approve(address(staking), stakingAmount);
@@ -151,11 +150,13 @@ contract RewardsStakingTest is Test {
         console.log("Charlie:", charlieReward1Claimed);
         console.log("User4:", user4Reward1Claimed);
         
-        uint32 aliceLastClaimedDaySinceDeployment = staking.userData(alice).lastClaimedDaySinceDeployment;
-        assertEq(aliceLastClaimedDaySinceDeployment, deploymentDay + 5);
-        assertEq(staking.userData(bob).lastClaimedDaySinceDeployment, deploymentDay + 5);
-        assertEq(staking.userData(charlie).lastClaimedDaySinceDeployment, deploymentDay + 5);
-        assertEq(staking.userData(user4).lastClaimedDaySinceDeployment, deploymentDay + 5);
+        (uint32 bobLastClaimed,,, ) = staking.userData(bob);
+        (uint32 charlieLastClaimed,,, ) = staking.userData(charlie);
+        (uint32 user4LastClaimed,,, ) = staking.userData(user4);
+        
+        assertEq(bobLastClaimed, staking.deploymentDay() + 10);
+        assertEq(charlieLastClaimed, staking.deploymentDay() + 10);
+        assertEq(user4LastClaimed, staking.deploymentDay() + 10);
         
         console.log("Bob should have more rewards than Alice due to higher lock multiplier");
         assertGt(bobReward1Claimed, aliceReward1Claimed);
@@ -168,9 +169,20 @@ contract RewardsStakingTest is Test {
 
         vm.warp(block.timestamp + 5 days);
         console.log("==================== Day 15: Try to withdraw: ");
-        console.log("Alice should initiate cooldown");
+        console.log("Alice should initiate cooldown by withdrawing with claim");
+
+        uint256 aliceReward1BeforeWithdrawal = rewardToken1.balanceOf(alice);
+        uint256 aliceBalanceBeforeWithdrawal = stakingToken.balanceOf(alice);
         vm.prank(alice);
-        staking.withdraw(0, false); // Initiate cooldown
+        staking.withdraw(0, true); // Initiate cooldown
+        uint256 aliceReward1AfterWithdrawal = rewardToken1.balanceOf(alice);
+        uint256 aliceBalanceAfterWithdrawal = stakingToken.balanceOf(alice);
+
+        console.log("Alice should get more rewards than before");
+        assertGt(aliceReward1AfterWithdrawal, aliceReward1BeforeWithdrawal);
+
+        console.log("Alice staking tokens balance shouldn't be changed because of cooldown");
+        assertEq(aliceBalanceBeforeWithdrawal, aliceBalanceAfterWithdrawal);
 
         console.log("Bob should not be able to withdraw because of locked");
         vm.prank(bob);
@@ -228,8 +240,8 @@ contract RewardsStakingTest is Test {
         assertEq(aliceStakeBalanceAfter - aliceStakeBalanceBefore, stakingAmount);
         
         // // Day 30: Claim rewards again
-        vm.warp(block.timestamp + 7 days);
-        console.log("==================== Day 29: Claim rewards");
+        vm.warp(block.timestamp + 8 days);
+        console.log("==================== Day 30: Claim rewards");
         
         
         uint256 bobReward1Before2 = rewardToken1.balanceOf(bob);
@@ -247,6 +259,16 @@ contract RewardsStakingTest is Test {
 
         vm.prank(alice);
         staking.claim();
+
+        (uint32 aliceLastClaimed2,,, ) = staking.userData(alice);
+        (uint32 bobLastClaimed2,,, ) = staking.userData(bob);
+        (uint32 charlieLastClaimed2,,, ) = staking.userData(charlie);
+        (uint32 user4LastClaimed2,,, ) = staking.userData(user4);
+
+        assertEq(aliceLastClaimed2, staking.deploymentDay() + 30);
+        assertEq(bobLastClaimed2, staking.deploymentDay() + 30);
+        assertEq(charlieLastClaimed2, staking.deploymentDay() + 30);
+        assertEq(user4LastClaimed2, staking.deploymentDay() + 10);
         
         uint256 bobReward1After2 = rewardToken1.balanceOf(bob);
         uint256 charlieReward1After2 = rewardToken1.balanceOf(charlie);
