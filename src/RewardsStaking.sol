@@ -215,14 +215,15 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
         if (lastClaimed >= currentDaySinceDeployment) return;
 
         user.lastClaimedDaySinceDeployment = uint32(currentDaySinceDeployment);
-
+        int256 initUserWeight = user.lastClaimedWeight;
+        int256 initTotalWeight = user.lastClaimedTotalWeight;
+        
         for (uint256 r = 0; r < rewardTokensLength; ) {
             address rewardToken = rewardTokens[r];
             uint256 totalReward = 0;
 
-            int256 cumulativeUserWeight = user.lastClaimedWeight;
-            int256 cumulativeTotalWeight = user.lastClaimedTotalWeight;
-
+            int256 cumulativeUserWeight = initUserWeight;
+            int256 cumulativeTotalWeight = initTotalWeight;
             for (uint256 d = lastClaimed; d < currentDaySinceDeployment; ) {
                 cumulativeUserWeight += userWeightDelta[userAddress][d];
                 cumulativeTotalWeight += totalWeightDelta[d];
