@@ -220,23 +220,25 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
         
         for (uint256 r = 0; r < rewardTokensLength; ) {
             address rewardToken = rewardTokens[r];
-            uint256 totalReward = 0;
+            uint256 contractBalance = IERC20(rewardToken).balanceOf(address(this));
+            if (contractBalance == 0) {
+                unchecked { ++r; }
+                continue;
+            }
 
+            uint256 totalReward = 0;
             int256 cumulativeUserWeight = initUserWeight;
             int256 cumulativeTotalWeight = initTotalWeight;
             for (uint256 d = lastClaimed; d < currentDaySinceDeployment; ) {
                 cumulativeUserWeight += userWeightDelta[userAddress][d];
                 cumulativeTotalWeight += totalWeightDelta[d];
 
-                if (cumulativeUserWeight <= 0 || cumulativeTotalWeight <= 0) {
-                    unchecked { ++d; }
-                    continue;
-                }
-
-                uint256 emissions = emissionsByToken[rewardToken][d];
-                if (emissions > 0) {
-                    uint256 userShare = (emissions * uint256(cumulativeUserWeight)) / uint256(cumulativeTotalWeight);
-                    totalReward += userShare;
+                if (cumulativeUserWeight > 0 && cumulativeTotalWeight > 0) {
+                    uint256 emissions = emissionsByToken[rewardToken][d];
+                    if (emissions > 0) {
+                        uint256 userShare = (emissions * uint256(cumulativeUserWeight)) / uint256(cumulativeTotalWeight);
+                        totalReward += userShare;
+                    }
                 }
 
                 unchecked { ++d; }
