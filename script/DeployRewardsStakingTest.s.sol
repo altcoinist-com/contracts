@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {RewardsStaking} from "../src/RewardsStaking.sol";
+import {MockForwarder} from "../test/utils/MockForwarder.sol";
 import {MockERC20} from "../test/utils/MockERC20.sol";
 
 contract DeployRewardsStakingTest is Script {
@@ -30,8 +31,11 @@ contract DeployRewardsStakingTest is Script {
             10_000_000 * 10**18
         );
         
-        // Deploy RewardsStaking contract
-        RewardsStaking staking = new RewardsStaking(stakingToken);
+        // Deploy MockForwarder for testing
+        MockForwarder forwarder = new MockForwarder();
+        console.log("MockForwarder:", address(forwarder));
+        // Deploy RewardsStaking contract with trustedForwarder
+        RewardsStaking staking = new RewardsStaking(stakingToken, address(forwarder));
         
         // Add reward tokens
         staking.addRewardToken(address(stakingToken));

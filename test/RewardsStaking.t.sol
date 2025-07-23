@@ -6,12 +6,14 @@ import {console} from "forge-std/console.sol";
 import {RewardsStaking} from "../src/RewardsStaking.sol";
 import {MockERC20} from "../test/utils/MockERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {MockForwarder} from "../test/utils/MockForwarder.sol";
 
 contract RewardsStakingTest is Test {
     RewardsStaking public staking;
     MockERC20 public stakingToken;
     MockERC20 public rewardToken1;
     MockERC20 public rewardToken2;
+    MockForwarder public forwarder; // mock trustedForwarder
     
     address public owner;
     address public alice;
@@ -35,8 +37,10 @@ contract RewardsStakingTest is Test {
         rewardToken1 = new MockERC20("Reward Token 1", "REW1", 18, INITIAL_TOKEN_BALANCE);
         rewardToken2 = new MockERC20("Reward Token 2", "REW2", 18, INITIAL_TOKEN_BALANCE);
         
-        // Deploy staking contract
-        staking = new RewardsStaking(stakingToken);
+        // Deploy mock forwarder
+        forwarder = new MockForwarder();
+        // Deploy staking contract with trustedForwarder
+        staking = new RewardsStaking(stakingToken, address(forwarder));
         
         // Transfer tokens to users
         stakingToken.transfer(alice, 10_000 * 10**18);

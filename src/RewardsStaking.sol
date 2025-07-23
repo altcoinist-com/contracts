@@ -74,8 +74,8 @@ contract RewardsStaking is ERC2771Context, ReentrancyGuard, Ownable2Step, Pausab
     error ZeroAddress();
 
     constructor(
-        IERC20 _stakingToken, address trustedForwarder
-    ) Ownable(msg.sender) ERC2771Context(trustedForwarder) {
+        IERC20 _stakingToken, address _trustedForwarder
+    ) ERC2771Context(_trustedForwarder) Ownable(_msgSender()) {
         if (address(_stakingToken) == address(0)) revert ZeroAddress();
         stakingToken = _stakingToken;
         deploymentDay = block.timestamp / 1 days;

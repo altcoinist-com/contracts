@@ -5,6 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {RewardsStaking} from "../src/RewardsStaking.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {MockForwarder} from "../test/utils/MockForwarder.sol";
 
 contract DeployProduction is Script {
     // Address ALTT token in mainnet
@@ -27,8 +28,8 @@ contract DeployProduction is Script {
         
         vm.startBroadcast(deployerPrivateKey);
         
-        // Deploy RewardsStaking contract with real ALTT token
-        RewardsStaking staking = new RewardsStaking(IERC20(ALTT_TOKEN));
+        // Deploy RewardsStaking contract with real ALTT token and trustedForwarder
+        RewardsStaking staking = new RewardsStaking(IERC20(ALTT_TOKEN), 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789);
         
         vm.stopBroadcast();
         
