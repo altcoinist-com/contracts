@@ -265,6 +265,86 @@ contract RewardsStakingTest is Test {
 
     }
 
+    function test_Stake_WithClaim() public {
+        uint256 stakeAmount = MIN_STAKING_AMOUNT;
+        uint256 topUpAmount = 1000 * 10**18;
+
+        staking.addRewardToken(address(rewardToken1));
+        rewardToken1.approve(address(staking), topUpAmount);
+        staking.topUp(address(rewardToken1), topUpAmount);
+
+        uint256 initialStakingBalance = stakingToken.balanceOf(alice);
+        uint256 initialRewardsBalance = rewardToken1.balanceOf(alice);
+
+        // User stakes
+        vm.startPrank(alice);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_12M, true);
+
+        assertEq(stakingToken.balanceOf(alice), initialStakingBalance - stakeAmount);
+        console.log("Rewards balance should be same as before");
+        assertEq(rewardToken1.balanceOf(alice), initialRewardsBalance);
+        
+        // Skip some time
+        vm.warp(block.timestamp + 2 days);
+        
+        // User stakes again with claiming rewards
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_12M, true);
+        vm.stopPrank();
+
+        uint256 balanceRewardsAfter2ndStake = rewardToken1.balanceOf(alice);
+        
+        console.log("Rewards balance after 2nd stake should be greater than before");
+        assertGt(balanceRewardsAfter2ndStake, initialRewardsBalance);
+    }
+
+    function test_Withdraw_WithClaim() public {
+        uint256 stakeAmount = MIN_STAKING_AMOUNT;
+        uint256 topUpAmount = 1000 * 10**18;
+
+        uint256 initialStakingBalance = stakingToken.balanceOf(alice);
+        uint256 initialRewardsBalance = rewardToken1.balanceOf(alice);
+
+        // User stakes
+        vm.startPrank(alice);
+        stakingToken.approve(address(staking), stakeAmount);
+        staking.stake(stakeAmount, RewardsStaking.LockType.LOCK_12M, false);
+        vm.stopPrank();
+
+        // skip 1 day because satking start from next day, but topUp applied in day of topup 
+        vm.warp(block.timestamp + 1 days);
+
+        staking.addRewardToken(address(rewardToken1));
+        rewardToken1.approve(address(staking), topUpAmount);
+        staking.topUp(address(rewardToken1), topUpAmount);
+
+        assertEq(stakingToken.balanceOf(alice), initialStakingBalance - stakeAmount);
+        assertEq(rewardToken1.balanceOf(alice), initialRewardsBalance);
+        assertEq(initialRewardsBalance, 0);
+
+        // Skip some time for rewards to accrue
+        vm.warp(block.timestamp + 500 days);
+
+        // Balances before withdraw
+        uint256 beforeWithdrawStaking = stakingToken.balanceOf(alice);
+        uint256 beforeWithdrawRewards = rewardToken1.balanceOf(alice);
+
+        // User withdraws with claim=true
+        vm.startPrank(alice);
+        staking.withdraw(0, true);
+        vm.stopPrank();
+
+        uint256 afterWithdrawStaking = stakingToken.balanceOf(alice);
+        uint256 afterWithdrawRewards = rewardToken1.balanceOf(alice);
+
+        console.log(stakingToken.balanceOf(address(staking)));
+        assertEq(afterWithdrawStaking, beforeWithdrawStaking + stakeAmount);
+        assertGt(afterWithdrawRewards, beforeWithdrawRewards);
+        console.log("Rewards balance after withdraw should be greater than before");
+        assertEq(afterWithdrawRewards - initialRewardsBalance, topUpAmount);
+    }
+
     function test_Stake_RevertIfPaused() public {
         uint256 amount = MIN_STAKING_AMOUNT;
         
@@ -543,7 +623,7 @@ contract RewardsStakingTest is Test {
     }
 
     // order of claim and withdraw doesnt matter
-    function test_ClaimRewards_WithdrawalWithWithdrawl() public {
+    function test_ClaimRewards_WithWithdrawal() public {
         uint256 stakeAmount = MIN_STAKING_AMOUNT;
         uint256 topUpAmount = 1000 * 10**18;
         
@@ -655,7 +735,6 @@ contract RewardsStakingTest is Test {
 
         vm.stopPrank();
     }
-    
     
     function test_TopUp_DifferentLockTypesWeights() public {
         uint256 stakeAmount = MIN_STAKING_AMOUNT;
