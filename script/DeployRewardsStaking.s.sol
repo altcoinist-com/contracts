@@ -5,7 +5,6 @@ import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {RewardsStaking} from "../src/RewardsStaking.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {MockForwarder} from "../test/utils/MockForwarder.sol";
 
 contract DeployProduction is Script {
     // Address ALTT token in mainnet
