@@ -6,8 +6,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable2Step,Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {ERC2771Context} from "@openzeppelin/contracts/metatx/ERC2771Context.sol";
+import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 
-contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
+contract RewardsStaking is ERC2771Context, ReentrancyGuard, Ownable2Step, Pausable {
     using SafeERC20 for IERC20;
 
     enum LockType { LIQUID, LOCK_1M, LOCK_3M, LOCK_6M, LOCK_12M }
@@ -71,13 +73,23 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
     error PositionNotExists();
     error ZeroAddress();
 
-    constructor(IERC20 _stakingToken) Ownable(msg.sender) {
+    constructor(
+        IERC20 _stakingToken, address trustedForwarder
+    ) Ownable(msg.sender) ERC2771Context(trustedForwarder) {
         if (address(_stakingToken) == address(0)) revert ZeroAddress();
         stakingToken = _stakingToken;
         deploymentDay = block.timestamp / 1 days;
     }
 
     // ============ ADMIN FUNCTIONS ============
+
+    function _msgSender() internal view virtual override(Context, ERC2771Context) returns (address) {
+        return ERC2771Context._msgSender();
+    }
+
+    function _msgData() internal view virtual override(Context, ERC2771Context) returns (bytes calldata) {
+        return ERC2771Context._msgData();
+    }
 
     function addRewardToken(address token) external onlyOwner {
         if (token == address(0)) revert ZeroAddress();
@@ -122,18 +134,19 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
     function stake(uint256 amount, LockType lockType, bool autoClaim) external nonReentrant whenNotPaused {
         if (amount < MIN_STAKING_AMOUNT) revert InvalidAmount();
 
+        address userAddress = _msgSender();
         if (autoClaim) {
-            _claim(msg.sender);
+            _claim(userAddress);
         }
 
         uint256 currentDay = getCurrentDaySinceDeployment();
         uint32 startDay = uint32(currentDay + 1); // staking starts from the next day
         uint32 unlockDay = lockType == LockType.LIQUID ? type(uint32).max : uint32(startDay + getLockDuration(lockType));
 
-        UserData storage user = userData[msg.sender];
+        UserData storage user = userData[userAddress];
         uint256 positionIndex = user.positionCount++;
 
-        userPositions[msg.sender][positionIndex] = StakingPosition({
+        userPositions[userAddress][positionIndex] = StakingPosition({
             amount: uint128(amount),
             startDaySinceDeployment: startDay,
             unlockDaySinceDeployment: unlockDay,
@@ -142,22 +155,23 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
         });
 
         uint256 weight = calculateWeight(amount, lockType);
-        _updateWeightDelta(msg.sender, startDay, unlockDay, int256(weight));
+        _updateWeightDelta(userAddress, startDay, unlockDay, int256(weight));
 
         totalStaked += amount;
 
-        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+        stakingToken.safeTransferFrom(userAddress, address(this), amount);
 
-        emit Staked(msg.sender, amount, lockType, positionIndex);
+        emit Staked(userAddress, amount, lockType, positionIndex);
     }
 
     function withdraw(uint256 index, bool autoClaim) external nonReentrant {
-        StakingPosition storage pos = userPositions[msg.sender][index];
+        address userAddress = _msgSender();
+        StakingPosition storage pos = userPositions[userAddress][index];
         uint256 amount = pos.amount;
         if (amount == 0) revert PositionNotExists();
 
         if (autoClaim) {
-            _claim(msg.sender);
+            _claim(userAddress);
         }
 
         uint256 currentDaySinceDeployment = getCurrentDaySinceDeployment();
@@ -165,9 +179,9 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
             if (currentDaySinceDeployment < pos.unlockDaySinceDeployment) revert PositionLocked();
 
             uint256 weight = calculateWeight(amount, pos.lockType);
-            _updateWeightDelta(msg.sender, currentDaySinceDeployment, pos.unlockDaySinceDeployment, -int256(weight));
+            _updateWeightDelta(userAddress, currentDaySinceDeployment, pos.unlockDaySinceDeployment, -int256(weight));
 
-            _processWithdraw(msg.sender, index, pos);
+            _processWithdraw(userAddress, index, pos);
             return;
         }
 
@@ -176,9 +190,9 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
             pos.cooldownEndDaySinceDeployment = uint32(currentDaySinceDeployment + COOLDOWN);
 
             uint256 weight = calculateWeight(amount, pos.lockType);
-            _updateWeightDelta(msg.sender, currentDaySinceDeployment, type(uint32).max, -int256(weight));
+            _updateWeightDelta(userAddress, currentDaySinceDeployment, type(uint32).max, -int256(weight));
 
-            emit CooldownInitiated(msg.sender, index);
+            emit CooldownInitiated(userAddress, index);
             return;
         }
 
@@ -186,22 +200,22 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
             revert CooldownNotFinished();
         }
 
-        _processWithdraw(msg.sender, index, pos);
+        _processWithdraw(userAddress, index, pos);
     }
 
-    function _processWithdraw(address user, uint256 index, StakingPosition storage pos) internal {
+    function _processWithdraw(address userAddress, uint256 index, StakingPosition storage pos) internal {
         uint256 amount = pos.amount;
 
         totalStaked -= amount;
         pos.amount = 0;
 
-        stakingToken.safeTransfer(user, amount);
+        stakingToken.safeTransfer(userAddress, amount);
 
-        emit Withdrawn(user, amount, index);
+        emit Withdrawn(userAddress, amount, index);
     }
 
     function claim() external nonReentrant {
-        _claim(msg.sender);
+        _claim(_msgSender());
     }
 
     function _claim(address userAddress) internal {
@@ -260,7 +274,7 @@ contract RewardsStaking is ReentrancyGuard, Ownable2Step, Pausable {
         if (amount == 0) revert InvalidAmount();
         if (!isRewardToken[rewardToken]) revert InvalidRewardToken();
 
-        IERC20(rewardToken).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(rewardToken).safeTransferFrom(_msgSender(), address(this), amount);
 
         uint256 currentDay = getCurrentDaySinceDeployment(); // emissions start from the current day
 
