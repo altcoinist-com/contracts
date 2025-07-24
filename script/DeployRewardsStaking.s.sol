@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
-import {RewardsStakingUpgradeable} from "../src/RewardsStaking.sol";
+import {RewardsStaking} from "../src/RewardsStaking.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -30,11 +30,11 @@ contract DeployProduction is Script {
         vm.startBroadcast(deployerPrivateKey);
         
         // 1. Deploy implementation logic
-        RewardsStakingUpgradeable logic = new RewardsStakingUpgradeable();
+        RewardsStaking logic = new RewardsStaking();
 
         // 2. Encode initializer data
         bytes memory data = abi.encodeCall(
-            RewardsStakingUpgradeable.initialize,
+            RewardsStaking.initialize,
             (IERC20(ALTT_TOKEN), TRUSTED_FORWARDER)
         );
 
@@ -42,7 +42,7 @@ contract DeployProduction is Script {
         ERC1967Proxy proxy = new ERC1967Proxy(address(logic), data);
 
          // 4. Cast proxy to RewardsStakingUpgradeable interface
-        RewardsStakingUpgradeable staking = RewardsStakingUpgradeable(address(proxy));
+        RewardsStaking staking = RewardsStaking(payable(address(proxy)));
 
         // 5. Add ALTT as reward token
         staking.addRewardToken(ALTT_TOKEN);

@@ -4,20 +4,19 @@ pragma solidity ^0.8.22;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 
-contract RewardsStakingUpgradeable is 
+contract RewardsStaking is
     Initializable,
-    ERC2771ContextUpgradeable,
+    ContextUpgradeable,
     ReentrancyGuardUpgradeable,
     Ownable2StepUpgradeable,
     PausableUpgradeable,
-    UUPSUpgradeable 
+    UUPSUpgradeable
 {
     using SafeERC20 for IERC20;
 
@@ -59,7 +58,8 @@ contract RewardsStakingUpgradeable is
     uint256 public deploymentDay;
     uint256 public totalStaked;
 
-    // Events
+    address private _trustedForwarder;
+
     event TopUp(address indexed token, uint256 amount);
     event Staked(address indexed user, uint256 amount, LockType lockType, uint256 positionIndex);
     event Withdrawn(address indexed user, uint256 amount, uint256 positionIndex);
@@ -79,10 +79,10 @@ contract RewardsStakingUpgradeable is
     error ZeroAddress();
 
     // === ADMIN INITIALIZER ===
-    function initialize(IERC20 _stakingToken, address _trustedForwarder) external initializer {
+    function initialize(IERC20 _stakingToken, address trustedForwarder) external initializer {
         if (address(_stakingToken) == address(0)) revert ZeroAddress();
+        if (trustedForwarder == address(0)) revert ZeroAddress();
 
-        __ERC2771ContextUpgradeable_init(_trustedForwarder);
         __Ownable2Step_init();
         __ReentrancyGuard_init();
         __Pausable_init();
@@ -90,6 +90,7 @@ contract RewardsStakingUpgradeable is
 
         stakingToken = _stakingToken;
         deploymentDay = block.timestamp / 1 days;
+        _trustedForwarder = trustedForwarder;
     }
 
     // ============ ADMIN FUNCTIONS ============
@@ -374,15 +375,27 @@ contract RewardsStakingUpgradeable is
         if (newImplementation == address(0)) revert ZeroAddress();
     }
 
-    function _msgSender() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (address) {
-        return ERC2771ContextUpgradeable._msgSender();
+    // === ERC2771 implementation ===
+
+    function isTrustedForwarder(address forwarder) public view returns (bool) {
+        return forwarder == _trustedForwarder;
     }
 
-    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
-        return ERC2771ContextUpgradeable._msgData();
+    function _msgSender() internal view override returns (address sender) {
+        if (isTrustedForwarder(msg.sender)) {
+            assembly {
+                sender := shr(96, calldataload(sub(calldatasize(), 20)))
+            }
+        } else {
+            sender = super._msgSender();
+        }
     }
 
-    function _contextSuffixLength() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (uint256) {
-        return ERC2771ContextUpgradeable._contextSuffixLength();
+    function _msgData() internal view override returns (bytes calldata) {
+        if (isTrustedForwarder(msg.sender)) {
+            return msg.data[:msg.data.length - 20];
+        } else {
+            return super._msgData();
+        }
     }
 }
