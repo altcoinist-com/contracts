@@ -14,13 +14,19 @@ contract RewardsStakingV2 is RewardsStaking {
     function version() external pure returns (string memory) {
         return "V2";
     }
+
+    function newFunction() external pure returns (string memory) {
+        return "Upgraded!";
+    }
+
+    function _authorizeUpgrade(address newImpl) internal override onlyOwner {}
 }
 
 contract RewardsStakingUpgradeTest is Test {
     RewardsStaking logic;
     RewardsStaking staking;
     ERC1967Proxy proxy;
-    MockERC20 token;
+    MockERC20 stakingToken;
     MockTrustedForwarder trustedForwarder; // mock trustedForwarder
 
     address deployer = address(0xABCD);
@@ -29,14 +35,14 @@ contract RewardsStakingUpgradeTest is Test {
         vm.startPrank(deployer);
 
         // 1. Deploy logic + token
-        token = new MockERC20("Test Token", "TST", 18, 10_000_000 * 10**18);
+        stakingToken = new MockERC20("Test Token", "TST", 18, 10_000_000 * 10**18);
         logic = new RewardsStaking();
         trustedForwarder = new MockTrustedForwarder();
 
         // 2. Encode initializer
         bytes memory data = abi.encodeCall(
             RewardsStaking.initialize,
-            (IERC20(address(token)), address(trustedForwarder))
+            (IERC20(address(stakingToken)), address(trustedForwarder))
         );
 
         // 3. Deploy proxy with data
@@ -46,30 +52,46 @@ contract RewardsStakingUpgradeTest is Test {
         staking = RewardsStaking(payable(address(proxy)));
 
         // 5. Add reward token
-        staking.addRewardToken(address(token));
+        staking.addRewardToken(address(stakingToken));
 
         vm.stopPrank();
     }
 
-    function testRewardTokenIsAdded() public {
-        assertEq(staking.getRewardTokensLength(), 1);
+    function testCanCallAfterDeploy() public {
+        assertEq(address(staking.stakingToken()), address(stakingToken));
     }
 
-    function testUpgradeToV2() public {
+    function testUpgradeToV2AndCallNewFunction() public {
         vm.startPrank(deployer);
 
-        // 6. Deploy V2 logic
-        RewardsStakingV2 v2 = new RewardsStakingV2();
+        // 1. Deploy new logic contract (V2)
+        RewardsStakingV2 logicV2 = new RewardsStakingV2();
 
-        // 7. Upgrade
-        staking.upgradeTo(address(v2));
+        // 2. Upgrade
+        staking.upgradeToAndCall(address(logicV2), "");
 
-        // 8. Check that old state still present
-        assertEq(staking.getRewardTokensLength(), 1);
+        // 3. Call new function
+        string memory result = RewardsStakingV2(payable(address(staking))).newFunction();
+        assertEq(result, "Upgraded!");
 
-        // 9. Check new logic via cast
-        string memory version = RewardsStakingV2(address(staking)).version();
+        string memory version = RewardsStakingV2(payable(address(staking))).version();
         assertEq(version, "V2");
+
+        vm.stopPrank();
+    }
+
+    function test_StoragePersistsAcrossUpgrade() public {
+        vm.startPrank(deployer);
+
+        // Set a reward token before upgrade
+        staking.addRewardToken(address(stakingToken));
+
+        // Upgrade
+        RewardsStakingV2 logicV2 = new RewardsStakingV2();
+        staking.upgradeToAndCall(address(logicV2), "");
+
+        // Make sure reward token still exists
+        assertTrue(RewardsStakingV2(payable(address(staking))).isRewardToken(address(stakingToken)));
 
         vm.stopPrank();
     }
