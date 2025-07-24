@@ -32,20 +32,35 @@ contract DeployRewardsStakingTest is Script {
         );
         
         // Deploy MockForwarder for testing
-        MockTrustedForwarder forwarder = new MockTrustedForwarder();
-        console.log("MockTrustedForwarder address:", address(forwarder));
-        // Deploy RewardsStaking contract with trustedForwarder
-        RewardsStaking staking = new RewardsStaking(stakingToken, address(forwarder));
+        MockTrustedForwarder trustedForwarder = new MockTrustedForwarder();
+        console.log("MockTrustedForwarder address:", address(trustedForwarder));
         
-        // Add reward tokens
+        // 1. Deploy implementation logic
+        RewardsStakingUpgradeable logic = new RewardsStakingUpgradeable();
+
+        // 2. Encode initializer data
+        bytes memory data = abi.encodeCall(
+            RewardsStakingUpgradeable.initialize,
+            (IERC20(address(stakingToken)), address(trustedForwarder))
+        );
+
+        // 3. Deploy proxy with initializer data
+        ERC1967Proxy proxy = new ERC1967Proxy(address(logic), data);
+
+         // 4. Cast proxy to RewardsStakingUpgradeable interface
+        RewardsStakingUpgradeable staking = RewardsStakingUpgradeable(address(proxy));
+
+        // 5. Add ALTT as reward tokens
         staking.addRewardToken(address(stakingToken));
         staking.addRewardToken(address(rewardToken2));
         
         vm.stopBroadcast();
         
         console.log("=== DEPLOYMENT SUCCESSFUL ===");
+        console.log("Logic Contract:", address(logic));
+        console.log("Proxy Contract (main address):", address(proxy));
         console.log("Staking Token:", address(stakingToken));
-        console.log("Reward Token 1:", address(stakingToken));
+        console.log("Reward Token 1:", address(rewardToken1));
         console.log("Reward Token 2:", address(rewardToken2));
         console.log("Staking Contract:", address(staking));
         console.log("================================");
