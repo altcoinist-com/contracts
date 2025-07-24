@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.22;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -93,18 +93,6 @@ contract RewardsStakingUpgradeable is
     }
 
     // ============ ADMIN FUNCTIONS ============
-
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
-        if (newImplementation == address(0)) revert ZeroAddress();
-    }
-
-    function _msgSender() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (address) {
-        return ERC2771ContextUpgradeable._msgSender();
-    }
-
-    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
-        return ERC2771ContextUpgradeable._msgData();
-    }
 
     function addRewardToken(address token) external onlyOwner {
         if (token == address(0)) revert ZeroAddress();
@@ -380,5 +368,21 @@ contract RewardsStakingUpgradeable is
 
     fallback() external payable {
         revert("Fallback function not allowed");
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+        if (newImplementation == address(0)) revert ZeroAddress();
+    }
+
+    function _msgSender() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (address) {
+        return ERC2771ContextUpgradeable._msgSender();
+    }
+
+    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
+        return ERC2771ContextUpgradeable._msgData();
+    }
+
+    function _contextSuffixLength() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (uint256) {
+        return ERC2771ContextUpgradeable._contextSuffixLength();
     }
 }

@@ -43,7 +43,7 @@ contract DeployRewardsStakingTest is Script {
         // 2. Encode initializer data
         bytes memory data = abi.encodeCall(
             RewardsStakingUpgradeable.initialize,
-            (IERC20(address(stakingToken)), address(trustedForwarder))
+            (IERC20(address(stakingToken)))
         );
 
         // 3. Deploy proxy with initializer data
@@ -62,7 +62,7 @@ contract DeployRewardsStakingTest is Script {
         console.log("Logic Contract:", address(logic));
         console.log("Proxy Contract (main address):", address(proxy));
         console.log("Staking Token:", address(stakingToken));
-        console.log("Reward Token 1:", address(rewardToken1));
+        console.log("Reward Token 1:", address(stakingToken));
         console.log("Reward Token 2:", address(rewardToken2));
         console.log("Staking Contract:", address(staking));
         console.log("================================");
