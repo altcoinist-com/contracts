@@ -3,13 +3,21 @@ pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Ownable2Step,Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ERC2771Context} from "@openzeppelin/contracts/metatx/ERC2771Context.sol";
-import {Context} from "@openzeppelin/contracts/utils/Context.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import {ERC2771ContextUpgradeable} from "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract RewardsStaking is ERC2771Context, ReentrancyGuard, Ownable2Step, Pausable {
+contract RewardsStaking is 
+    Initializable,
+    ERC2771ContextUpgradeable,
+    ReentrancyGuardUpgradeable,
+    Ownable2StepUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable 
+{
     using SafeERC20 for IERC20;
 
     enum LockType { LIQUID, LOCK_1M, LOCK_3M, LOCK_6M, LOCK_12M }
@@ -29,29 +37,25 @@ contract RewardsStaking is ERC2771Context, ReentrancyGuard, Ownable2Step, Pausab
         int256 lastClaimedTotalWeight;
     }
 
-    IERC20 public immutable stakingToken;
+    IERC20 public stakingToken;
     address[] public rewardTokens;
-    mapping(address => uint8) public rewardTokenIndex; // index of token in rewardTokens array
-    mapping(address => bool) public isRewardToken; // is token added as reward token
+    mapping(address => uint8) public rewardTokenIndex;
+    mapping(address => bool) public isRewardToken;
 
-    uint256 constant COOLDOWN = 7;
+    uint256 public constant COOLDOWN = 7;
     uint256 public constant DECAY_DAYS = 90;
-    uint256 public constant DECAY_BASE = 990; // equivalent to 0.99 with scale 1000
+    uint256 public constant DECAY_BASE = 990;
     uint256 public constant DECAY_SCALE = 1000;
     uint256 public constant WEIGHT_SCALE = 1000;
     uint256 public constant MIN_STAKING_AMOUNT = 100 * 10 ** 18;
 
     mapping(address => mapping(uint256 => StakingPosition)) public userPositions;
     mapping(address => UserData) public userData;
+    mapping(address => mapping(uint256 => int256)) public userWeightDelta;
+    mapping(uint256 => int256) public totalWeightDelta;
+    mapping(address => mapping(uint256 => uint256)) public emissionsByToken;
 
-    // Delta-weight model
-    mapping(address => mapping(uint256 => int256)) public userWeightDelta; // user => day => delta-weight
-    mapping(uint256 => int256) public totalWeightDelta; // day => delta-weight
-
-    // Emissions per reward token
-    mapping(address => mapping(uint256 => uint256)) public emissionsByToken;  // rewardToken => day => amount
-
-    uint256 public immutable deploymentDay;
+    uint256 public deploymentDay;
     uint256 public totalStaked;
 
     // Events
@@ -73,22 +77,32 @@ contract RewardsStaking is ERC2771Context, ReentrancyGuard, Ownable2Step, Pausab
     error PositionNotExists();
     error ZeroAddress();
 
-    constructor(
-        IERC20 _stakingToken, address _trustedForwarder
-    ) ERC2771Context(_trustedForwarder) Ownable(_msgSender()) {
+    // === ADMIN INITIALIZER ===
+    function initialize(IERC20 _stakingToken, address _trustedForwarder) external initializer {
         if (address(_stakingToken) == address(0)) revert ZeroAddress();
+
+        __ERC2771Context_init(_trustedForwarder);
+        __Ownable2Step_init();
+        __ReentrancyGuard_init();
+        __Pausable_init();
+        __UUPSUpgradeable_init();
+
         stakingToken = _stakingToken;
         deploymentDay = block.timestamp / 1 days;
     }
 
     // ============ ADMIN FUNCTIONS ============
 
-    function _msgSender() internal view virtual override(Context, ERC2771Context) returns (address) {
-        return ERC2771Context._msgSender();
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+        if (newImplementation == address(0)) revert ZeroAddress();
     }
 
-    function _msgData() internal view virtual override(Context, ERC2771Context) returns (bytes calldata) {
-        return ERC2771Context._msgData();
+    function _msgSender() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (address) {
+        return ERC2771ContextUpgradeable._msgSender();
+    }
+
+    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
+        return ERC2771ContextUpgradeable._msgData();
     }
 
     function addRewardToken(address token) external onlyOwner {
