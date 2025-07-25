@@ -49,8 +49,9 @@ contract RewardsStaking is
     uint256 public constant WEIGHT_SCALE = 1000;
     uint256 public constant MIN_STAKING_AMOUNT = 100 * 10 ** 18;
 
-    mapping(address => mapping(uint256 => StakingPosition)) public userPositions;
+    address[] public allStakers;
     mapping(address => UserData) public userData;
+    mapping(address => mapping(uint256 => StakingPosition)) public userPositions;
     mapping(address => mapping(uint256 => int256)) public userWeightDelta;
     mapping(uint256 => int256) public totalWeightDelta;
     mapping(address => mapping(uint256 => uint256)) public emissionsByToken;
@@ -149,6 +150,10 @@ contract RewardsStaking is
         uint32 unlockDay = lockType == LockType.LIQUID ? type(uint32).max : uint32(startDay + getLockDuration(lockType));
 
         UserData storage user = userData[userAddress];
+        if (user.positionCount == 0) {
+            allStakers.push(userAddress);
+        }
+
         uint256 positionIndex = user.positionCount++;
 
         userPositions[userAddress][positionIndex] = StakingPosition({
@@ -357,16 +362,39 @@ contract RewardsStaking is
 
     // ============ VIEW FUNCTIONS ============
 
+    /**
+     * @notice Get the number of staking positions for a user
+     * @param user Address of the user
+     * @return count Number of staking positions
+     */
     function getUserPositionCount(address user) external view returns (uint256) {
         return userData[user].positionCount;
     }
 
+    /**
+     * @notice Get a specific staking position for a user
+     * @param user Address of the user
+     * @param index Index of the position
+     * @return position Staking position details
+     */
     function getUserPosition(address user, uint256 index) external view returns (StakingPosition memory) {
         return userPositions[user][index];
     }
 
+    /**
+     * @notice Get the number of reward tokens configured
+     * @return count Number of reward tokens
+     */
     function getRewardTokensLength() external view returns (uint256) {
         return rewardTokens.length;
+    }
+
+    /**
+     * @notice Get total number of stakers
+     * @return Total number of unique stakers
+     */
+    function getStakersCount() external view returns (uint256) {
+        return allStakers.length;
     }
 
     receive() external payable {
