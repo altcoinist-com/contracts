@@ -79,18 +79,19 @@ contract RewardsStaking is
     error ZeroAddress();
 
     // === ADMIN INITIALIZER ===
-    function initialize(IERC20 _stakingToken, address trustedForwarder) external initializer {
-        if (address(_stakingToken) == address(0)) revert ZeroAddress();
-        if (trustedForwarder == address(0)) revert ZeroAddress();
+    function initialize(IERC20 stakingToken_, address trustedForwarder_) external initializer {
+        if (address(stakingToken_) == address(0)) revert ZeroAddress();
+        if (trustedForwarder_ == address(0)) revert ZeroAddress();
 
+        __Ownable_init(_msgSender());
         __Ownable2Step_init();
         __ReentrancyGuard_init();
         __Pausable_init();
         __UUPSUpgradeable_init();
 
-        stakingToken = _stakingToken;
+        stakingToken = stakingToken_;
         deploymentDay = block.timestamp / 1 days;
-        _trustedForwarder = trustedForwarder;
+        _trustedForwarder = trustedForwarder_;
     }
 
     // ============ ADMIN FUNCTIONS ============
@@ -371,31 +372,53 @@ contract RewardsStaking is
         revert("Fallback function not allowed");
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+    function _authorizeUpgrade(address newImplementation) view internal virtual override onlyOwner {
         if (newImplementation == address(0)) revert ZeroAddress();
     }
 
     // === ERC2771 implementation ===
 
+    function trustedForwarder() public view returns (address) {
+        return _trustedForwarder;
+    }
+
     function isTrustedForwarder(address forwarder) public view returns (bool) {
         return forwarder == _trustedForwarder;
     }
 
-    function _msgSender() internal view override returns (address sender) {
-        if (isTrustedForwarder(msg.sender)) {
-            assembly {
-                sender := shr(96, calldataload(sub(calldatasize(), 20)))
+    function _msgSender() internal view virtual override returns (address) {
+        uint256 calldataLength = msg.data.length;
+        uint256 contextSuffixLength = _contextSuffixLength();
+        if (calldataLength >= contextSuffixLength && isTrustedForwarder(msg.sender)) {
+            unchecked {
+                return address(bytes20(msg.data[calldataLength - contextSuffixLength:]));
             }
         } else {
-            sender = super._msgSender();
+            return super._msgSender();
         }
     }
 
-    function _msgData() internal view override returns (bytes calldata) {
-        if (isTrustedForwarder(msg.sender)) {
-            return msg.data[:msg.data.length - 20];
+    /**
+     * @dev Override for `msg.data`. Defaults to the original `msg.data` whenever
+     * a call is not performed by the trusted forwarder or the calldata length is less than
+     * 20 bytes (an address length).
+     */
+    function _msgData() internal view virtual override returns (bytes calldata) {
+        uint256 calldataLength = msg.data.length;
+        uint256 contextSuffixLength = _contextSuffixLength();
+        if (calldataLength >= contextSuffixLength && isTrustedForwarder(msg.sender)) {
+            unchecked {
+                return msg.data[:calldataLength - contextSuffixLength];
+            }
         } else {
             return super._msgData();
         }
+    }
+
+    /**
+     * @dev ERC-2771 specifies the context as being a single address (20 bytes).
+     */
+    function _contextSuffixLength() internal view virtual override returns (uint256) {
+        return 20;
     }
 }
