@@ -140,10 +140,6 @@ contract RewardsStaking is
         if (amount < MIN_STAKING_AMOUNT) revert InvalidAmount();
 
         address userAddress = _msgSender();
-        if (autoClaim) {
-            _claim(userAddress);
-        }
-
         uint256 currentDay = getCurrentDaySinceDeployment();
         uint32 startDay = uint32(currentDay + 1); // staking starts from the next day
         uint32 unlockDay = lockType == LockType.LIQUID ? type(uint32).max : uint32(startDay + getLockDuration(lockType));
@@ -165,8 +161,11 @@ contract RewardsStaking is
         totalStaked += amount;
 
         stakingToken.safeTransferFrom(userAddress, address(this), amount);
-
         emit Staked(userAddress, amount, lockType, positionIndex);
+
+        if (autoClaim) {
+            _claim(userAddress);
+        }
     }
 
     function withdraw(uint256 index, bool autoClaim) external nonReentrant {
@@ -175,10 +174,7 @@ contract RewardsStaking is
         uint256 amount = pos.amount;
         if (amount == 0) revert PositionNotExists();
 
-        if (autoClaim) {
-            _claim(userAddress);
-        }
-
+        bool doClaim = false;
         uint256 currentDaySinceDeployment = getCurrentDaySinceDeployment();
         if (pos.lockType != LockType.LIQUID) {
             if (currentDaySinceDeployment < pos.unlockDaySinceDeployment) revert PositionLocked();
@@ -187,25 +183,30 @@ contract RewardsStaking is
             _updateWeightDelta(userAddress, currentDaySinceDeployment, pos.unlockDaySinceDeployment, -int256(weight));
 
             _processWithdraw(userAddress, index, pos);
-            return;
+            doClaim = autoClaim;
+        } else {
+            // liquid staking
+            if (pos.cooldownEndDaySinceDeployment == 0) {
+                pos.cooldownEndDaySinceDeployment = uint32(currentDaySinceDeployment + COOLDOWN);
+
+                uint256 weight = calculateWeight(amount, pos.lockType);
+                _updateWeightDelta(userAddress, currentDaySinceDeployment, type(uint32).max, -int256(weight));
+
+                emit CooldownInitiated(userAddress, index);
+            } else {
+                if (currentDaySinceDeployment < uint256(pos.cooldownEndDaySinceDeployment)) {
+                    revert CooldownNotFinished();
+                }
+
+                _processWithdraw(userAddress, index, pos);
+            }
+            
+            doClaim = autoClaim;
         }
 
-        // liquid staking
-        if (pos.cooldownEndDaySinceDeployment == 0) {
-            pos.cooldownEndDaySinceDeployment = uint32(currentDaySinceDeployment + COOLDOWN);
-
-            uint256 weight = calculateWeight(amount, pos.lockType);
-            _updateWeightDelta(userAddress, currentDaySinceDeployment, type(uint32).max, -int256(weight));
-
-            emit CooldownInitiated(userAddress, index);
-            return;
+        if (doClaim) {
+            _claim(userAddress);
         }
-
-        if (currentDaySinceDeployment < uint256(pos.cooldownEndDaySinceDeployment)) {
-            revert CooldownNotFinished();
-        }
-
-        _processWithdraw(userAddress, index, pos);
     }
 
     function _processWithdraw(address userAddress, uint256 index, StakingPosition storage pos) internal {
