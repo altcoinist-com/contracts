@@ -31,31 +31,31 @@ contract RewardsStakingUpgradeTest is Test {
     address deployer = address(0xABCD);
 
     function setUp() public {
-    // 0. Set deployer as msg.sender
-    vm.startPrank(deployer);
+        // 0. Set deployer as msg.sender
+        vm.startPrank(deployer);
 
-    // 1. Deploy mock token and trusted forwarder
-    stakingToken = new MockERC20("Test Token", "TST", 18, 10_000_000 * 10**18);
-    trustedForwarder = new MockTrustedForwarder();
+        // 1. Deploy mock token and trusted forwarder
+        stakingToken = new MockERC20("Test Token", "TST", 18, 10_000_000 * 10**18);
+        trustedForwarder = new MockTrustedForwarder();
 
-    // 2. Deploy logic (implementation)
-    logic = new RewardsStaking();
+        // 2. Deploy logic (implementation)
+        logic = new RewardsStaking();
 
-    // 3. Deploy proxy with initializer data
-    bytes memory data = abi.encodeCall(
-        RewardsStaking.initialize,
-        (IERC20(address(stakingToken)), address(trustedForwarder))
-    );
-    proxy = new ERC1967Proxy(address(logic), data);
+        // 3. Deploy proxy with initializer data
+        bytes memory data = abi.encodeCall(
+            RewardsStaking.initialize,
+            (IERC20(address(stakingToken)), address(trustedForwarder))
+        );
+        proxy = new ERC1967Proxy(address(logic), data);
 
-    // 4. Cast proxy to RewardsStaking
-    staking = RewardsStaking(payable(address(proxy)));
+        // 4. Cast proxy to RewardsStaking
+        staking = RewardsStaking(payable(address(proxy)));
 
-    // 5. Call only-owner function
-    staking.addRewardToken(address(stakingToken));
+        // 5. Call only-owner function
+        staking.addRewardToken(address(stakingToken));
 
-    vm.stopPrank();
-}
+        vm.stopPrank();
+    }
 
     function test_InitialRewardTokensLength() public {
         assertEq(staking.getRewardTokensLength(), 1);
@@ -91,5 +91,14 @@ contract RewardsStakingUpgradeTest is Test {
         assertEq(RewardsStakingV2(payable(address(staking))).getRewardTokensLength(), 1);
 
         vm.stopPrank();
+    }
+
+    function test_CannotInitializeImplementationDirectly() public {
+        // Deploy implementation contract directly without proxy
+        RewardsStaking impl = new RewardsStaking();
+
+        // Try to call initialize should fail
+        vm.expectRevert(bytes4(keccak256("InvalidInitialization()")));
+        impl.initialize(IERC20(address(1)), address(2)); // should revert
     }
 }

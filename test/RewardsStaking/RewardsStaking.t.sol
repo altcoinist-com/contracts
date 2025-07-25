@@ -420,7 +420,7 @@ contract RewardsStakingTest is Test {
         assertEq(staking.totalWeightDelta(startDay + 90), -625 * 10**18);
     }
 
-    function test_TopUp() public {
+    function test_TopUp_DistributesFullAmount() public {
         uint256 topUpAmount = 1000 * 10**18;
         
         staking.addRewardToken(address(rewardToken1));
@@ -434,8 +434,7 @@ contract RewardsStakingTest is Test {
             uint256 emission = staking.emissionsByToken(address(rewardToken1), i);
             totalEmission += emission;
         }
-        assertTrue(totalEmission <= topUpAmount);
-        console.log(totalEmission);
+        assertEq(totalEmission, topUpAmount);
         // console.log(staking.emissionsByToken(address(rewardToken1), 0));
         // console.log(staking.emissionsByToken(address(rewardToken1), 89));
     }

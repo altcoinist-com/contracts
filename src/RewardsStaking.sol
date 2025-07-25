@@ -78,6 +78,10 @@ contract RewardsStaking is
     error PositionNotExists();
     error ZeroAddress();
 
+    constructor() {
+        _disableInitializers();
+    }
+
     // === ADMIN INITIALIZER ===
     function initialize(IERC20 stakingToken_, address trustedForwarder_) external initializer {
         if (address(stakingToken_) == address(0)) revert ZeroAddress();
@@ -200,7 +204,7 @@ contract RewardsStaking is
 
                 _processWithdraw(userAddress, index, pos);
             }
-            
+
             doClaim = autoClaim;
         }
 
@@ -333,7 +337,7 @@ contract RewardsStaking is
         return currentTimestamp < deploymentDay ? 0 : currentTimestamp - deploymentDay;
     }
 
-    function getLockDuration(LockType lt) internal pure returns (uint16) {
+    function getLockDuration(LockType lt) public pure returns (uint16) {
         if (lt == LockType.LIQUID) return 0;
         if (lt == LockType.LOCK_1M) return 30;
         if (lt == LockType.LOCK_3M) return 90;
@@ -342,7 +346,7 @@ contract RewardsStaking is
         revert InvalidLockType();
     }
 
-    function getLockMultiplier(LockType lt) internal pure returns (uint16) {
+    function getLockMultiplier(LockType lt) public pure returns (uint16) {
         if (lt == LockType.LIQUID) return 500;
         if (lt == LockType.LOCK_1M) return 550;
         if (lt == LockType.LOCK_3M) return 625;
