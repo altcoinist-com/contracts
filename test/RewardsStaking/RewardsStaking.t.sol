@@ -3,17 +3,20 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
-import {RewardsStaking} from "../src/RewardsStaking.sol";
-import {MockERC20} from "../test/utils/MockERC20.sol";
+import {RewardsStaking} from "../../src/RewardsStaking.sol";
+import {MockERC20} from "../utils/MockERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {MockTrustedForwarder} from "../test/utils/MockTrustedForwarder.sol";
+import {MockTrustedForwarder} from "../utils/MockTrustedForwarder.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract RewardsStakingTest is Test {
-    RewardsStaking public staking;
     MockERC20 public stakingToken;
     MockERC20 public rewardToken1;
     MockERC20 public rewardToken2;
-    MockTrustedForwarder public forwarder; // mock trustedForwarder
+    MockTrustedForwarder public trustedForwarder; // mock trustedForwarder
+    ERC1967Proxy proxy;
+    RewardsStaking logic;
+    RewardsStaking public staking;
     
     address public owner;
     address public alice;
@@ -37,10 +40,20 @@ contract RewardsStakingTest is Test {
         rewardToken1 = new MockERC20("Reward Token 1", "REW1", 18, INITIAL_TOKEN_BALANCE);
         rewardToken2 = new MockERC20("Reward Token 2", "REW2", 18, INITIAL_TOKEN_BALANCE);
         
-        // Deploy mock forwarder
-        forwarder = new MockTrustedForwarder();
-        // Deploy staking contract with trustedForwarder
-        staking = new RewardsStaking(stakingToken, address(forwarder));
+        logic = new RewardsStaking();
+        trustedForwarder = new MockTrustedForwarder();
+
+        // 2. Encode initializer
+        bytes memory data = abi.encodeCall(
+            RewardsStaking.initialize,
+            (IERC20(address(stakingToken)), address(trustedForwarder))
+        );
+
+        // 3. Deploy proxy with data
+        proxy = new ERC1967Proxy(address(logic), data);
+
+        // 4. Cast to interface
+        staking = RewardsStaking(payable(address(proxy)));
         
         // Transfer tokens to users
         stakingToken.transfer(alice, 10_000 * 10**18);
@@ -800,13 +813,29 @@ contract RewardsStakingTest is Test {
     }
     
     function test_RejectEther() public {
-        vm.expectRevert("Contract does not accept ETH");
-        address(staking).call{value: 1 ether}("");
+        uint256 before = address(staking).balance;
+    
+        (bool success, ) = address(staking).call{value: 1 ether}("");
+        
+        assertFalse(success, "Should not accept ETH");
+
+        uint256 afterBalance = address(staking).balance;
+        assertEq(afterBalance, before);
     }
 
-    function test_RejectEther2() public {
+    function test_RejectEther_Transfer() public {
+        uint256 before = address(staking).balance;
+
+        vm.expectRevert();
+        payable(address(staking)).transfer(1 ether);
+
+        uint256 afterBalance = address(staking).balance;
+        assertEq(afterBalance, before);
+    }
+
+    function test_RejectEther_DirectLogic() public {
         vm.expectRevert("Contract does not accept ETH");
-    payable(address(staking)).transfer(1 ether);
+        payable(address(logic)).transfer(1 ether);
     }
 
     function test_RevertOnFallback() public {

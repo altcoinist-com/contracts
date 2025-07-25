@@ -2,15 +2,18 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../src/RewardsStaking.sol";
-import "./utils/MockERC20.sol";
-import "./utils/MockTrustedForwarder.sol";
+import "../../src/RewardsStaking.sol";
+import "../utils/MockERC20.sol";
+import "../utils/MockTrustedForwarder.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract RewardsStakingERC2771Test is Test {
     RewardsStaking public stakingContract;
     MockERC20 public stakingToken;
     MockERC20 public rewardToken;
     MockTrustedForwarder public trustedForwarder;
+    ERC1967Proxy proxy;
+    RewardsStaking logic;
 
     address public owner;
     address public user1;
@@ -29,11 +32,24 @@ contract RewardsStakingERC2771Test is Test {
         stakingToken = new MockERC20("Staking Token", "STK", 18, 1_000_000e18);
         rewardToken = new MockERC20("Reward Token", "RWD", 18, 1_000_000e18);
 
-        // Deploy mock trusted forwarder
+
+        logic = new RewardsStaking();
         trustedForwarder = new MockTrustedForwarder();
 
-        // Deploy staking contract
-        stakingContract = new RewardsStaking(stakingToken, address(trustedForwarder));
+        // 2. Encode initializer
+        bytes memory data = abi.encodeCall(
+            RewardsStaking.initialize,
+            (IERC20(address(stakingToken)), address(trustedForwarder))
+        );
+
+        // 3. Deploy proxy with data
+        proxy = new ERC1967Proxy(address(logic), data);
+
+        // 4. Cast to interface
+        stakingContract = RewardsStaking(payable(address(proxy)));
+        
+        // 5. Add reward token
+        stakingContract.addRewardToken(address(stakingToken));
 
         // Setup balances
         stakingToken.transfer(user1, 10_000e18);

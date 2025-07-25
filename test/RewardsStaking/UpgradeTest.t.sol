@@ -3,12 +3,11 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
-import {RewardsStaking} from "../src/RewardsStaking.sol";
-import {MockERC20} from "../test/utils/MockERC20.sol";
+import {RewardsStaking} from "../../src/RewardsStaking.sol";
+import {MockERC20} from "../../test/utils/MockERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {MockTrustedForwarder} from "../test/utils/MockTrustedForwarder.sol";
+import {MockTrustedForwarder} from "../../test/utils/MockTrustedForwarder.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "../src/RewardsStaking.sol";
 
 contract RewardsStakingV2 is RewardsStaking {
     function version() external pure returns (string memory) {
@@ -19,7 +18,7 @@ contract RewardsStakingV2 is RewardsStaking {
         return "Upgraded!";
     }
 
-    function _authorizeUpgrade(address newImpl) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) view internal override onlyOwner {}
 }
 
 contract RewardsStakingUpgradeTest is Test {
@@ -32,36 +31,37 @@ contract RewardsStakingUpgradeTest is Test {
     address deployer = address(0xABCD);
 
     function setUp() public {
-        vm.startPrank(deployer);
+    // 0. Set deployer as msg.sender
+    vm.startPrank(deployer);
 
-        // 1. Deploy logic + token
-        stakingToken = new MockERC20("Test Token", "TST", 18, 10_000_000 * 10**18);
-        logic = new RewardsStaking();
-        trustedForwarder = new MockTrustedForwarder();
+    // 1. Deploy mock token and trusted forwarder
+    stakingToken = new MockERC20("Test Token", "TST", 18, 10_000_000 * 10**18);
+    trustedForwarder = new MockTrustedForwarder();
 
-        // 2. Encode initializer
-        bytes memory data = abi.encodeCall(
-            RewardsStaking.initialize,
-            (IERC20(address(stakingToken)), address(trustedForwarder))
-        );
+    // 2. Deploy logic (implementation)
+    logic = new RewardsStaking();
 
-        // 3. Deploy proxy with data
-        proxy = new ERC1967Proxy(address(logic), data);
+    // 3. Deploy proxy with initializer data
+    bytes memory data = abi.encodeCall(
+        RewardsStaking.initialize,
+        (IERC20(address(stakingToken)), address(trustedForwarder))
+    );
+    proxy = new ERC1967Proxy(address(logic), data);
 
-        // 4. Cast to interface
-        staking = RewardsStaking(payable(address(proxy)));
+    // 4. Cast proxy to RewardsStaking
+    staking = RewardsStaking(payable(address(proxy)));
 
-        // 5. Add reward token
-        staking.addRewardToken(address(stakingToken));
+    // 5. Call only-owner function
+    staking.addRewardToken(address(stakingToken));
 
-        vm.stopPrank();
+    vm.stopPrank();
+}
+
+    function test_InitialRewardTokensLength() public {
+        assertEq(staking.getRewardTokensLength(), 1);
     }
 
-    function testCanCallAfterDeploy() public {
-        assertEq(address(staking.stakingToken()), address(stakingToken));
-    }
-
-    function testUpgradeToV2AndCallNewFunction() public {
+    function test_UpgradeToV2AndCallNewFunction() public {
         vm.startPrank(deployer);
 
         // 1. Deploy new logic contract (V2)
@@ -83,15 +83,12 @@ contract RewardsStakingUpgradeTest is Test {
     function test_StoragePersistsAcrossUpgrade() public {
         vm.startPrank(deployer);
 
-        // Set a reward token before upgrade
-        staking.addRewardToken(address(stakingToken));
-
         // Upgrade
         RewardsStakingV2 logicV2 = new RewardsStakingV2();
         staking.upgradeToAndCall(address(logicV2), "");
 
         // Make sure reward token still exists
-        assertTrue(RewardsStakingV2(payable(address(staking))).isRewardToken(address(stakingToken)));
+        assertEq(RewardsStakingV2(payable(address(staking))).getRewardTokensLength(), 1);
 
         vm.stopPrank();
     }

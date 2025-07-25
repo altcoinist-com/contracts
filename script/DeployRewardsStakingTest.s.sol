@@ -11,12 +11,6 @@ import {MockERC20} from "../test/utils/MockERC20.sol";
 
 contract DeployRewardsStakingTest is Script {
     function run() external {
-        // uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        // address deployer = vm.addr(deployerPrivateKey);
-        
-        // console.log("Deploying contracts with the account:", deployer);
-        // console.log("Account balance:", deployer.balance);
-        
         vm.startBroadcast();
         
         MockERC20 stakingToken = new MockERC20(
