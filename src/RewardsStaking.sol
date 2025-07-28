@@ -147,7 +147,7 @@ contract RewardsStaking is
         address userAddress = _msgSender();
         uint256 currentDay = getCurrentDaySinceDeployment();
         uint32 startDay = uint32(currentDay + 1); // staking starts from the next day
-        uint32 unlockDay = lockType == LockType.LIQUID ? type(uint32).max : uint32(startDay + getLockDuration(lockType));
+        uint32 unlockDay = lockType == LockType.LIQUID ? 0 : uint32(startDay + getLockDuration(lockType));
 
         UserData storage user = userData[userAddress];
         if (user.positionCount == 0) {
@@ -199,7 +199,7 @@ contract RewardsStaking is
                 pos.cooldownEndDaySinceDeployment = uint32(currentDaySinceDeployment + COOLDOWN);
 
                 uint256 weight = calculateWeight(amount, pos.lockType);
-                _updateWeightDelta(userAddress, currentDaySinceDeployment, type(uint32).max, -int256(weight));
+                _updateWeightDelta(userAddress, currentDaySinceDeployment, 0, -int256(weight));
 
                 emit CooldownInitiated(userAddress, index);
             } else {
@@ -331,7 +331,7 @@ contract RewardsStaking is
         userWeightDelta[user][startDay] += delta;
         totalWeightDelta[startDay] += delta;
 
-        if (endDay < type(uint256).max) {
+        if (endDay > 0) {
             userWeightDelta[user][endDay] -= delta;
             totalWeightDelta[endDay] -= delta;
         }

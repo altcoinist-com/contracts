@@ -180,7 +180,7 @@ contract RewardsStakingTest is Test {
         uint256 deploymentDay = staking.deploymentDay();
         uint256 startDay = deploymentDay + 1;
         assertEq(position.startDaySinceDeployment, startDay);
-        assertEq(position.unlockDaySinceDeployment, type(uint32).max);
+        assertEq(position.unlockDaySinceDeployment, 0);
 
         assertEq(staking.totalStaked(), amount);
         assertEq(stakingToken.balanceOf(alice), INITIAL_USER_BALANCE - amount);
@@ -251,7 +251,7 @@ contract RewardsStakingTest is Test {
         
         assertEq(uint(pos0.lockType), uint(RewardsStaking.LockType.LIQUID));
         assertEq(pos0.startDaySinceDeployment, startDay);
-        assertEq(pos0.unlockDaySinceDeployment, type(uint32).max);
+        assertEq(pos0.unlockDaySinceDeployment, 0);
         assertEq(pos0.cooldownEndDaySinceDeployment, 0);
         
         assertEq(pos1.amount, stakeAmount * 2);
