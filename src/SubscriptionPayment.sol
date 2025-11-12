@@ -106,12 +106,12 @@ contract SubscriptionPayment is ReentrancyGuard {
         }
         
         // Transfer total from subscriber to contract
-        paymentToken.safeTransferFrom(subscriber, address(this), totalAmount);
+        // paymentToken.safeTransferFrom(subscriber, address(this), totalAmount);
         
         // Distribute to all recipients
-        for (uint i = 0; i < recipients.length; i++) {
-            paymentToken.safeTransfer(recipients[i], amounts[i]);
-        }
+        // for (uint i = 0; i < recipients.length; i++) {
+        //     paymentToken.safeTransfer(recipients[i], amounts[i]);
+        // }
         
         // Emit event for backend monitoring
         emit SubscriptionProcessed(
