@@ -1,0 +1,12 @@
+{
+  "generator": "scripts/render-shared-rules.py",
+  "source_repository": "https://github.com/altcoinist-com/ai-harness",
+  "source_revision": "91c43530225418f7f37858ec23f981f4811d0dda",
+  "source_files_sha256": {
+    "rules/shared/core.md": "8400d7da70a2d9b1d818b8230ec0c42d173feb3f64a0d5a106ad95492d12c223",
+    "rules/shared/execution-routing.md": "fef473d0c9dd74e84e1767668e20f90f3d7f4165faa125b4f6e69b2076352050",
+    "rules/shared/knowledge-upkeep.md": "2fbbf47ce1c1ecc17b85bb5b2db8586ddfe9ad0e9c292faea3dc2af5b45e211b",
+    "rules/shared/single-source-of-truth.md": "4695e6302e22e5c60c603b8ebf866b14856e708c62b96216e81b9302e15118af"
+  },
+  "contract": "https://github.com/altcoinist-com/ai-harness/blob/91c43530225418f7f37858ec23f981f4811d0dda/docs/brain-contract.md"
+}
